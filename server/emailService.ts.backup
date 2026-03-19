@@ -269,9 +269,8 @@ export async function sendNfseEmail(
   clientEmail: string,
   clientName: string,
   numeroNfse: string,
-  pdfBuffer: Buffer | null | undefined,
-  empresaNome: string,
-  pdfDownloadToken?: string
+  pdfBuffer: Buffer,
+  empresaNome: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     if (!clientEmail) {
@@ -290,76 +289,51 @@ export async function sendNfseEmail(
     const smtpFromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || "nao-responda@fragacontabilidade.com.br";
     const smtpFromName = process.env.SMTP_FROM_NAME || "Fraga Contabilidade";
 
-    // Preparar link de download
-    const serverUrl = process.env.APP_URL || "https://dashboard.fragacontabilidade.com.br";
-    const pdfDownloadLink = pdfDownloadToken ? `${serverUrl}/api/nfse/pdf/${pdfDownloadToken}` : null;
-
-    // Construir conteúdo HTML
-    let htmlBody = `
-      <html>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6;">
-          <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h2 style="color: #2ecc71;">✅ Nota Fiscal Emitida com Sucesso!</h2>
-            
-            <p>Olá <strong>${clientName}</strong>,</p>
-            
-            <p>Sua Nota Fiscal de Serviço (NFS-e) foi emitida com sucesso!</p>
-            
-            <div style="background-color: #f0f0f0; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <p><strong>Número da NFS-e:</strong> ${numeroNfse}</p>
-              <p><strong>Empresa Emissora:</strong> ${empresaNome}</p>
-              <p><strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}</p>
-            </div>
-            `;
-
-    // Se houver pdfBuffer, informar que está anexado
-    if (pdfBuffer && pdfBuffer.length > 0) {
-      htmlBody += `<p>O PDF da sua nota fiscal está anexado neste email.</p>`;
-    } else if (pdfDownloadLink) {
-      // Se não houver pdfBuffer mas houver token, informar link de download
-      htmlBody += `
-            <p>Para baixar o PDF da sua nota fiscal, clique no link abaixo:</p>
-            <p style="text-align: center; margin: 20px 0;">
-              <a href="${pdfDownloadLink}" style="background-color: #2ecc71; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-                📥 Baixar PDF da NFS-e
-              </a>
-            </p>
-            `;
-    }
-
-    htmlBody += `
-            <p>Caso tenha dúvidas, não hesite em entrar em contato conosco!</p>
-            
-            <p style="color: #666; font-size: 12px; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
-              Este é um email automático. Não responda a este endereço de email.
-            </p>
-          </div>
-        </body>
-      </html>
-    `;
-
-    const mailOptions: any = {
+    const mailOptions = {
       from: `${smtpFromName} <${smtpFromEmail}>`,
       to: clientEmail,
       subject: `✅ Sua Nota Fiscal de Serviço (NFS-e) ${numeroNfse} está pronta!`,
-      html: htmlBody,
-    };
-
-    // Anexar PDF apenas se tiver conteúdo
-    if (pdfBuffer && pdfBuffer.length > 0) {
-      mailOptions.attachments = [
+      html: `
+        <html>
+          <body style="font-family: Arial, sans-serif; line-height: 1.6;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+              <h2 style="color: #2ecc71;">✅ Nota Fiscal Emitida com Sucesso!</h2>
+              
+              <p>Olá <strong>${clientName}</strong>,</p>
+              
+              <p>Sua Nota Fiscal de Serviço (NFS-e) foi emitida com sucesso!</p>
+              
+              <div style="background-color: #f0f0f0; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                <p><strong>Número da NFS-e:</strong> ${numeroNfse}</p>
+                <p><strong>Empresa Emissora:</strong> ${empresaNome}</p>
+                <p><strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}</p>
+              </div>
+              
+              <p>O PDF da sua nota fiscal está anexado neste email.</p>
+              
+              <p>Caso tenha dúvidas, não hesite em entrar em contato conosco pelo WhatsApp ou telefone.</p>
+              
+              <p style="margin-top: 30px; color: #666; font-size: 12px;">
+                <strong>Fraga Contabilidade</strong><br/>
+                Qualquer dúvida, estamos à disposição! 😊
+              </p>
+            </div>
+          </body>
+        </html>
+      `,
+      text: `Olá ${clientName},\n\nSua Nota Fiscal de Serviço (NFS-e) ${numeroNfse} foi emitida com sucesso pela ${empresaNome}.\n\nO PDF está anexado neste email.\n\nFraga Contabilidade`,
+      attachments: [
         {
           filename: `NFS-e_${numeroNfse}.pdf`,
           content: pdfBuffer,
           contentType: 'application/pdf'
         }
-      ];
-    }
+      ]
+    };
 
     const result = await transport.sendMail(mailOptions);
     
-    const attachmentInfo = pdfBuffer && pdfBuffer.length > 0 ? "com anexo PDF" : "com link de download";
-    console.log(`[Email-NFSE] ✅ Email enviado com sucesso para ${clientEmail} (${attachmentInfo}) | messageId: ${result.messageId}`);
+    console.log(`[Email-NFSE] ✅ Email enviado com sucesso para ${clientEmail} | messageId: ${result.messageId}`);
     return { success: true };
 
   } catch (error: any) {
@@ -367,4 +341,3 @@ export async function sendNfseEmail(
     return { success: false, error: error.message };
   }
 }
-

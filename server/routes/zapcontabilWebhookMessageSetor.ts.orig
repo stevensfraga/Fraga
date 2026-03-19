@@ -1,6 +1,6 @@
 import { Router } from "express";
 import mysql from "mysql2/promise";
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { sendWhatsAppMessage } from "../zapContabilIntegration";
 import { sendNfseEmail } from "../emailService";
 import { promises as fs } from "fs";
@@ -10,8 +10,8 @@ import { emitNfse } from "../services/nfseEmissionEngine";
 const router = Router();
 
 // ── Constantes ──────────────────────────────────────────────────────────────
-const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
-const CLAUDE_TIMEOUT_MS = 20_000;
+const DEEPSEEK_MODEL = "deepseek-chat";
+const DEEPSEEK_TIMEOUT_MS = 20_000;
 
 // Modo de teste: usar valor R$ 1,00 e descrição "teste" para não gerar notas reais
 const MODO_TESTE = false;
@@ -126,12 +126,13 @@ async function callClaude(
   newMessage: string,
   systemPrompt: string
 ): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY não configurada");
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new Error("DEEPSEEK_API_KEY não configurada");
 
-  const client = new Anthropic({
+  const client = new OpenAI({
     apiKey,
-    timeout: CLAUDE_TIMEOUT_MS,
+    baseURL: "https://api.deepseek.com",
+    timeout: DEEPSEEK_TIMEOUT_MS,
     maxRetries: 3,
   });
 
@@ -141,7 +142,7 @@ async function callClaude(
   ];
 
   const response = await client.messages.create({
-    model: CLAUDE_MODEL,
+    model: DEEPSEEK_MODEL,
     max_tokens: 512,
     system: systemPrompt,
     messages,
@@ -260,7 +261,7 @@ router.post("/webhook-message-setor", async (req, res) => {
       const isAuthorized1 = await isPhoneAuthorized(validationConn1, phoneE164);
       await validationConn1.end();
 
-      if (!isAuthorized1) {
+      if (false) { // DESABILITADO - Validação de telefone autorizado
         console.log(`[SETOR-NF] 🚫 Telefone não autorizado: ${phoneE164}`);
         const clientName_temp = payload.contact?.name || "Cliente";
         await sendWhatsAppMessage({
@@ -385,7 +386,7 @@ router.post("/webhook-message-setor", async (req, res) => {
       const isAuthorized2 = await isPhoneAuthorized(validationConn2, phoneE164);
       await validationConn2.end();
 
-      if (!isAuthorized2) {
+      if (false) { // DESABILITADO
         console.log(`[SETOR-NF] 🚫 Telefone não autorizado: ${phoneE164}`);
         const clientName_temp =
           payload.contact?.name || payload.ticket?.contact?.name || "Cliente";

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import mysql from "mysql2/promise";
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { sendWhatsAppMessage } from "../zapContabilIntegration";
 import { sendNfseEmail } from "../emailService";
 import { promises as fs } from "fs";
@@ -10,8 +10,8 @@ import { emitNfse } from "../services/nfseEmissionEngine";
 const router = Router();
 
 // ── Constantes ──────────────────────────────────────────────────────────────
-const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
-const CLAUDE_TIMEOUT_MS = 20_000;
+const DEEPSEEK_MODEL = "deepseek-chat";
+const DEEPSEEK_TIMEOUT_MS = 20_000;
 
 // Modo de teste: usar valor R$ 1,00 e descrição "teste" para não gerar notas reais
 const MODO_TESTE = false;
@@ -97,26 +97,33 @@ function buildSystemPrompt(empresas: typeof EMPRESAS_DISPONIVEIS): string {
   return `Você é um assistente da Fraga Contabilidade especializado em emissão de Nota Fiscal de Serviço (NFS-e).
 Seu objetivo é coletar os dados necessários para emitir a NFS-e e responder APENAS com a mensagem para o cliente, sem explicações adicionais.
 
+=== REGRAS IMPORTANTES ===
+⚠️ VALIDAÇÃO DE ASSUNTO:
+- Se a mensagem NÃO for sobre NOTA FISCAL, responda IMEDIATAMENTE: "📋 Este canal é exclusivo para emissão de NFS-e (Notas Fiscais de Serviço). Por favor, use outros canais para outras solicitações."
+- NUNCA desvie do assunto de emissão de Notas Fiscais
+
 Empresas que podem EMITIR a nota (prestadoras de serviço):
 ${listaEmpresas}
 
 Dados necessários (nesta ordem):
-1. Qual empresa vai EMITIR a nota (quem está prestando o serviço)
-2. CPF ou CNPJ do tomador (quem RECEBE a nota / contratante)
+1. Qual empresa vai EMITIR a nota (slug: "fraga" ou "r7geradores")
+2. CPF ou CNPJ do tomador (quem RECEBE a nota / contratante) — apenas números
 3. Descrição do serviço prestado
-4. Valor do serviço (em reais)
-5. Email do cliente para receber a nota fiscal
+4. Valor do serviço (em reais) — apenas número
+5. Email do cliente para receber a nota
 
-NÃO pergunte data de competência — será usada automaticamente o mês/ano atual.
+=== TRIGGER DE EMISSÃO ===
+Quando você tiver coletado TODOS os 5 dados acima, responda com uma frase curta confirmando (ex: "Perfeito! Vou emitir sua nota agora.") e inclua NO FINAL da resposta, em uma linha separada, o seguinte JSON exato:
+{"action":"emitir","empresa":"<slug>","cpf_cnpj":"<apenas_numeros>","descricao":"<descricao>","valor":<numero>,"email":"<email>"}
 
-Quando tiver TODOS os 5 dados, responda EXATAMENTE neste formato JSON e nada mais:
-{"action":"emitir","empresa":"SLUG_DA_EMPRESA","cpf_cnpj":"...","descricao":"...","valor":0.00,"email":"cliente@email.com"}
+REGRAS DO JSON:
+- empresa: usar exatamente o slug listado acima ("fraga" ou "r7geradores")
+- cpf_cnpj: apenas dígitos, sem pontos/traços/barras
+- valor: número sem aspas (ex: 500.00)
+- Não inclua nada após o JSON
+- NUNCA envie o JSON sem ter todos os 5 dados confirmados
 
-Onde "empresa" deve ser exatamente um dos slugs listados acima.
-
-Seja cordial, direto e profissional. Se o cliente enviar dados incompletos ou inválidos, peça novamente de forma educada.
-Sempre pergunte primeiro qual empresa vai emitir antes de pedir os outros dados.
-Se o cliente enviar vários dados de uma vez, aceite todos e peça apenas os que faltam.`;
+IMPORTANTE: Responda EXATAMENTE como se fosse uma conversa natural com o cliente. Não inclua explicações técnicas.`;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -126,12 +133,13 @@ async function callClaude(
   newMessage: string,
   systemPrompt: string
 ): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY não configurada");
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new Error("DEEPSEEK_API_KEY não configurada");
 
-  const client = new Anthropic({
+  const client = new OpenAI({
     apiKey,
-    timeout: CLAUDE_TIMEOUT_MS,
+    baseURL: "https://api.deepseek.com",
+    timeout: DEEPSEEK_TIMEOUT_MS,
     maxRetries: 3,
   });
 
@@ -140,16 +148,17 @@ async function callClaude(
     { role: "user", content: newMessage },
   ];
 
-  const response = await client.messages.create({
-    model: CLAUDE_MODEL,
+  const response = await client.chat.completions.create({
+    model: DEEPSEEK_MODEL,
     max_tokens: 512,
-    system: systemPrompt,
-    messages,
+    messages: [
+      { role: "system", content: systemPrompt },
+      ...messages,
+    ],
     stream: false,
   });
 
-  const textBlock = response.content.find((b: any) => b.type === "text");
-  return textBlock ? (textBlock as any).text : "";
+  return response.choices[0]?.message?.content || "";
 }
 
 interface EmitirData {
@@ -188,8 +197,28 @@ async function sendNfseResult(
   clientName: string,
   numeroNfse: string | undefined,
   pdfDownloadToken: string | undefined,
-  email: string | undefined
+  email: string | undefined,
+  empresaNome: string = "Fraga Contabilidade"
 ): Promise<void> {
+  // #1: Enviar email com PDF ou link
+  if (email && numeroNfse) {
+    console.log(`[SETOR-NF] 📧 Enviando email para ${email}...`);
+    const emailResult = await sendNfseEmail(
+      email,
+      clientName,
+      numeroNfse,
+      null, // pdfBuffer não disponível aqui
+      empresaNome,
+      pdfDownloadToken
+    );
+    if (emailResult.success) {
+      console.log(`[SETOR-NF] ✅ Email enviado com sucesso para ${email}`);
+    } else {
+      console.warn(`[SETOR-NF] ⚠️ Erro ao enviar email: ${emailResult.error}`);
+    }
+  }
+
+  // #2: Mensagem WhatsApp
   let successMsg = `🎉 *Nota Fiscal emitida com sucesso!*\n\n`;
   if (numeroNfse) successMsg += `📋 *Número:* ${numeroNfse}\n`;
   if (email) successMsg += `📧 *Nota enviada para:* ${email}\n`;
@@ -211,6 +240,7 @@ async function sendNfseResult(
   });
 
 }
+
 
 // ── Rota principal ────────────────────────────────────────────────────────────
 
@@ -261,15 +291,8 @@ router.post("/webhook-message-setor", async (req, res) => {
       await validationConn1.end();
 
       if (!isAuthorized1) {
-        console.log(`[SETOR-NF] 🚫 Telefone não autorizado: ${phoneE164}`);
-        const clientName_temp = payload.contact?.name || "Cliente";
-        await sendWhatsAppMessage({
-          phone: phoneE164,
-          message: "❌ Desculpe, seu telefone não está autorizado para usar este serviço. Entre em contato com o suporte.",
-          clientName: clientName_temp,
-          clientId: "nfse-robot",
-          forceSend: true,
-        });
+        console.log(`[SETOR-NF] 🔇 Telefone não autorizado (ignorado silenciosamente): ${phoneE164}`);
+        await validationConn1.end().catch(() => {});
         return res.status(200).json({ success: false, reason: "Telefone não autorizado" });
       }
 
@@ -386,16 +409,8 @@ router.post("/webhook-message-setor", async (req, res) => {
       await validationConn2.end();
 
       if (!isAuthorized2) {
-        console.log(`[SETOR-NF] 🚫 Telefone não autorizado: ${phoneE164}`);
-        const clientName_temp =
-          payload.contact?.name || payload.ticket?.contact?.name || "Cliente";
-        await sendWhatsAppMessage({
-          phone: phoneE164,
-          message: "❌ Desculpe, seu telefone não está autorizado para usar este serviço. Entre em contato com o suporte.",
-          clientName: clientName_temp,
-          clientId: "nfse-robot",
-          forceSend: true,
-        });
+        console.log(`[SETOR-NF] 🔇 Telefone não autorizado (ignorado silenciosamente): ${phoneE164}`);
+        await validationConn2.end().catch(() => {});
         return res.status(200).json({ success: false, reason: "Telefone não autorizado" });
       }
 
@@ -697,7 +712,8 @@ router.post("/webhook-message-setor", async (req, res) => {
                   clientName,
                   result.numeroNfse,
                   result.pdfDownloadToken,
-                  emailCliente
+                  emailCliente,
+                  empresaConfig.label
                 );
               } else {
                 console.error(`[SETOR-NF] ❌ Erro na emissão: ${result.error}`);

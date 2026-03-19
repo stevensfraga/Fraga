@@ -569,17 +569,8 @@ export async function emitNfse(emissaoId: number): Promise<EmissaoResult> {
 
     log("EMISSAO_COMPLETED", "OK", { numeroNfse, serieNfse, pdfUrl, pdfTokenUrl });
 
-    // 16. Enviar PDF via WhatsApp (se solicitado)
-    // Preferir link de token (sem login, 24h) sobre URL do S3
+    // Nota: envio de WhatsApp é responsabilidade do chamador (webhook envia via sendNfseResult no .then())
     const pdfLinkParaWhatsApp = pdfTokenUrl || pdfUrl;
-    if (em.solicitadoVia === "whatsapp" && em.whatsappPhone && pdfLinkParaWhatsApp) {
-      try {
-        await enviarPdfViaWhatsApp(em.whatsappPhone, numeroNfse, pdfLinkParaWhatsApp, em.tomadorNome);
-        log("WHATSAPP_PDF_SENT", "OK", { phone: em.whatsappPhone, linkType: pdfTokenUrl ? "token_url" : "s3_url" });
-      } catch (wErr: any) {
-        log("WHATSAPP_PDF_SENT", "WARN", { error: wErr.message });
-      }
-    }
 
     return { success: true, numeroNfse, serieNfse, pdfUrl: pdfLinkParaWhatsApp || pdfUrl, pdfLocalPath, pdfDownloadToken, logs };
 
@@ -2368,6 +2359,269 @@ async function enviarPdfViaWhatsApp(
     throw new Error(`Erro ao enviar PDF via WhatsApp: HTTP ${response.status} - ${responseText}`);
   }
 }
+// ══════════════════════════════════════════════════════════════════════
+// Cancelamento de NFS-e no portal da Prefeitura
+// ══════════════════════════════════════════════════════════════════════
+
+export interface CancelResult {
+  success: boolean;
+  error?: string;
+  logs: Array<{ step: string; status: "OK" | "FAIL" | "WARN"; details?: any }>;
+}
+
+export async function cancelNfse(emissaoId: number, justificativa?: string): Promise<CancelResult> {
+  const logs: CancelResult["logs"] = [];
+  let browser: any = null;
+  let page: any = null;
+
+  const log = (step: string, status: "OK" | "FAIL" | "WARN", details?: any) => {
+    logs.push({ step, status, details });
+    console.log(`[NfseCancel] ${step}_${status}:`, JSON.stringify(details || {}).substring(0, 200));
+  };
+
+  try {
+    // 1. Buscar dados da emissão
+    const [emissao] = await rawQuery("SELECT * FROM nfse_emissoes WHERE id = ?", [emissaoId]);
+    if (!emissao) throw new Error(`Emissão ${emissaoId} não encontrada`);
+    const em = emissao as any;
+
+    const numeroNf = em.numeroNf || em.numeroNfse;
+    if (!numeroNf) throw new Error("Emissão não possui número NF — não pode ser cancelada no portal");
+
+    // 2. Buscar config do prestador
+    const [config] = await rawQuery("SELECT * FROM nfse_config WHERE id = ?", [em.configId]);
+    if (!config) throw new Error(`Config ${em.configId} não encontrada`);
+    const cfg = config as any;
+
+    // 3. Buscar portal
+    const [portalRow] = await rawQuery("SELECT * FROM nfse_portais WHERE id = ? AND ativo = 1", [cfg.portal_id]);
+    if (!portalRow) throw new Error(`Portal ${cfg.portal_id} não encontrado ou inativo`);
+    const portal = portalRow as any;
+
+    log("INIT", "OK", { emissaoId, numeroNf, prestador: cfg.razaoSocial });
+
+    // 4. Iniciar Playwright
+    let playwright: any;
+    try {
+      playwright = await import("playwright-core");
+    } catch {
+      throw new Error("Playwright não instalado");
+    }
+
+    browser = await playwright.chromium.launch(await getChromiumLaunchOptions());
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 900 },
+      locale: "pt-BR",
+      timezoneId: "America/Sao_Paulo",
+    });
+    page = await context.newPage();
+
+    // Interceptar dialogs nativos (alert/confirm) automaticamente
+    page.on("dialog", async (dialog: any) => {
+      log("DIALOG", "OK", { type: dialog.type(), message: dialog.message().substring(0, 100) });
+      await dialog.accept();
+    });
+
+    // 5. Autenticação (mesma lógica do emitNfse)
+    let loginOk = false;
+    const portalUsuario = portal.usuario || portal.usuario_contador || "";
+    const portalSenhaRaw = portal.senha || portal.senha_contador || "";
+    const portalSenha = portalSenhaRaw ? decryptPassword(portalSenhaRaw) : "";
+
+    const storageState = await loadStorageState(cfg.portal_id);
+    if (storageState) {
+      await applyStorageState(context, storageState);
+      await safeGoto(page, VILAVELHA_SELECTORS.urls.login, {
+        timeout: 45000,
+        fallbackUrl: VILAVELHA_SELECTORS.urls.controle,
+        logFn: log,
+      });
+      const currentUrl = page.url();
+      const isLoginForm = await page.$(VILAVELHA_SELECTORS.pageState.isLoginPage).catch(() => null);
+      if (!isLoginForm && !currentUrl.toLowerCase().includes("login")) {
+        loginOk = true;
+        log("SESSION_VALID", "OK", { url: currentUrl });
+      } else {
+        await invalidateStorageState(cfg.portal_id);
+        log("SESSION_EXPIRED", "WARN", { url: currentUrl });
+      }
+    }
+
+    if (!loginOk && portalUsuario && portalSenha) {
+      await safeGoto(page, VILAVELHA_SELECTORS.urls.login, {
+        timeout: 45000,
+        fallbackUrl: VILAVELHA_SELECTORS.urls.controle,
+        logFn: log,
+      });
+      const loginResult = await solveCaptchaAndLogin(page, portalUsuario, portalSenha, 3);
+      for (const l of loginResult.logs) logs.push(l);
+      if (loginResult.success) {
+        loginOk = true;
+        log("LOGIN_OK", "OK", { method: "captcha_llm" });
+        try {
+          const newState = await context.storageState();
+          await saveStorageState(cfg.portal_id, newState as any, "auto_captcha_login");
+        } catch { /* ignora */ }
+      } else {
+        log("LOGIN_FAIL", "FAIL", { error: loginResult.error });
+      }
+    }
+
+    if (!loginOk) {
+      throw new Error(
+        "Falha na autenticação. Capture uma sessão manual em Portais → Capturar Sessão ou configure as credenciais."
+      );
+    }
+
+    // 6. Selecionar empresa no portal
+    await selectEmpresaNoPortal(page, cfg, emissaoId, logs);
+    log("EMPRESA_SELECTED", "OK", { razaoSocial: cfg.razaoSocial });
+
+    // 7. Navegar até o menu NFS-e (se não estiver lá ainda)
+    const isNfseMenu = await page.$(VILAVELHA_SELECTORS.pageState.isNfseMenu).catch(() => null);
+    if (!isNfseMenu) {
+      const isMainMenu = await page.$(VILAVELHA_SELECTORS.pageState.isLoggedIn).catch(() => null);
+      if (isMainMenu) {
+        await page.click(VILAVELHA_SELECTORS.menu.notaFiscal);
+        await page.waitForTimeout(2000);
+        await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+        log("NAVIGATE_TO_NFSE_MENU", "OK", { url: page.url() });
+      } else {
+        throw new Error("Não foi possível localizar o menu principal do portal após login");
+      }
+    }
+
+    // 8. Clicar em "Lista Nota Fiscais"
+    const listaBtn = await page.$(VILAVELHA_SELECTORS.nfseMenu.listaNotaFiscais).catch(() => null);
+    if (!listaBtn) {
+      await captureFailureScreenshot(page, emissaoId, "lista_btn_not_found");
+      throw new Error("Botão 'Lista Nota Fiscais' não encontrado no menu NFS-e");
+    }
+    await listaBtn.click();
+    await page.waitForTimeout(2000);
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    log("NAVIGATE_LIST", "OK", { url: page.url() });
+
+    // 9. Encontrar a linha da nota pelo número
+    const notaCell = await page.$(`td:has-text("${numeroNf}")`).catch(() => null);
+    if (!notaCell) {
+      await captureFailureScreenshot(page, emissaoId, "nota_not_found_in_list");
+      throw new Error(
+        `Nota ${numeroNf} não encontrada na lista. Ela pode já ter sido cancelada ou o número está incorreto.`
+      );
+    }
+    log("NOTA_FOUND", "OK", { numeroNf });
+
+    // Obter o elemento <tr> pai
+    const row = await notaCell.evaluateHandle((el: Element) => el.closest("tr")).catch(() => null);
+    if (!row) throw new Error("Não foi possível localizar a linha (<tr>) da nota na lista");
+
+    // 10. Localizar span.fa-remove na linha (portal PMVV: <span class='fa fa-remove' title='Cancelar Nota Fiscal - Nro XXXX'>)
+    const cancelBtn = await row.$('span.fa-remove, span.fa.fa-remove, span[title*="Cancelar" i]').catch(() => null);
+
+    if (!cancelBtn) {
+      await captureFailureScreenshot(page, emissaoId, "cancel_btn_not_found");
+      const rowHtml = await row.evaluate((el: Element) => el.outerHTML).catch(() => "N/A");
+      log("ROW_HTML", "WARN", { html: rowHtml.substring(0, 500) });
+      throw new Error(
+        `Botão de cancelar não encontrado na linha da nota ${numeroNf}. ` +
+        `A nota pode estar em status que não permite cancelamento (ex: já cancelada, com DAS gerado).`
+      );
+    }
+    log("CANCEL_BTN_FOUND", "OK", { numeroNf });
+
+    // 11. Clicar no span de cancelar — portal abre modal inline na mesma página
+    await cancelBtn.click();
+    log("CANCEL_CLICKED", "OK", { numeroNf });
+
+    // Aguardar o modal abrir (select#codMotivo é o primeiro campo do formulário de cancelamento)
+    await page.waitForSelector('select#codMotivo', { timeout: 15000, state: 'visible' }).catch(() => {
+      log("MODAL_WAIT", "WARN", { note: "select#codMotivo não apareceu em 15s — continuando mesmo assim" });
+    });
+    await page.waitForTimeout(500);
+    log("MODAL_OPENED", "OK", {});
+
+    // 12. Selecionar motivo "1" = Erro na Emissão via JS direto (evita timeout do selectOption)
+    const motivoSetOk = await page.evaluate(() => {
+      const el = document.querySelector('#codMotivo') as HTMLSelectElement | null;
+      if (!el) return false;
+      el.value = '1';
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }).catch(() => false);
+    log("MOTIVO_SELECTED", motivoSetOk ? "OK" : "WARN", { value: '1', label: 'Erro na Emissão', jsOk: motivoSetOk });
+
+    // 13. Preencher justificativa em textarea#motivo via JS direto
+    const motivoText = justificativa || "Cancelamento solicitado";
+    const motivoSetTextOk = await page.evaluate((text: string) => {
+      const el = document.querySelector('#motivo') as HTMLTextAreaElement | null;
+      if (!el) return false;
+      el.value = text;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }, motivoText).catch(() => false);
+    log("MOTIVO_FILLED", motivoSetTextOk ? "OK" : "WARN", { motivo: motivoText, jsOk: motivoSetTextOk });
+
+    // 14. Clicar Salvar/Confirmar (o clique pode disparar confirm() JS — já tratado pelo handler de dialog)
+    const confirmSelectors = [
+      'button#_imagebutton16',
+      'button:has-text("Salvar")',
+      'button:has-text("Confirmar")',
+      'button:has-text("Sim")',
+      'input[value*="Salvar" i]',
+      'input[value*="Confirmar" i]',
+    ];
+    let confirmado = false;
+    for (const sel of confirmSelectors) {
+      const btn = await page.$(sel).catch(() => null);
+      if (btn) {
+        await btn.click();
+        confirmado = true;
+        log("CANCEL_CONFIRMED", "OK", { selector: sel });
+        break;
+      }
+    }
+    if (!confirmado) {
+      log("CONFIRM_BTN_NOT_FOUND", "WARN", { note: "Botão Salvar/Confirmar não encontrado no modal" });
+    }
+
+    await page.waitForTimeout(2000);
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+
+    // 14. Verificar se houve mensagem de erro do portal
+    const errorEl = await page.$(
+      ".alert-danger, .mensagem-erro, #mensagemErro, [class*='erro']:not(input), span.error"
+    ).catch(() => null);
+    if (errorEl) {
+      const errText = await errorEl.textContent().catch(() => "");
+      if (errText && errText.trim().length > 0) {
+        throw new Error(`Portal retornou erro: ${errText.trim()}`);
+      }
+    }
+
+    // 14. Atualizar banco — marcar como cancelada
+    await rawExec(
+      "UPDATE nfse_emissoes SET status = 'cancelada' WHERE id = ?",
+      [emissaoId]
+    );
+    await auditLog(emissaoId, em.configId, "emissao_cancelada_portal", { numeroNf }, "system");
+
+    log("CANCEL_COMPLETED", "OK", { emissaoId, numeroNf });
+    return { success: true, logs };
+
+  } catch (error: any) {
+    const errorMsg = error.message || String(error);
+    console.error(`[NfseCancel] Erro ao cancelar emissão ${emissaoId}:`, errorMsg);
+    logs.push({ step: "FATAL_ERROR", status: "FAIL", details: { error: errorMsg } });
+    return { success: false, error: errorMsg, logs };
+  } finally {
+    if (browser) {
+      try { await browser.close(); } catch { }
+    }
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // Teste de conexão (diagnóstico)
 // ══════════════════════════════════════════════════════════════════════

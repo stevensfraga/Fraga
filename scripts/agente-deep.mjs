@@ -2,51 +2,140 @@ import OpenAI from "openai";
 import { execSync } from "child_process";
 import readline from "readline";
 import { readFileSync } from "fs";
+import { resolve } from "path";
 
-const env = readFileSync("/opt/fraga-dashboard/.env.production","utf8");
-const deepKey = env.split("\n").find(l=>l.startsWith("DEEPSEEK_API_KEY="))?.replace("DEEPSEEK_API_KEY=","")?.trim();
-
-const client = new OpenAI({baseURL:"https://api.deepseek.com",apiKey:deepKey});
-
-function cmd(c){
-  if(!c||typeof c!=="string")return "Erro: comando invalido";
-  try{return execSync(c,{cwd:"/opt/fraga-dashboard",timeout:60000,encoding:"utf8"});}
-  catch(e){return(e.stdout||"")+(e.stderr||"")||e.message;}
+// Ler arquivo de contexto
+let contextoString = "";
+try {
+  const contextoPath = resolve("/opt/fraga-dashboard/scripts/CONTEXTO-DEEPSEEK.md");
+  contextoString = readFileSync(contextoPath, "utf8");
+} catch (e) {
+  console.warn("⚠️  Aviso: Não foi possível ler CONTEXTO-DEEPSEEK.md");
+  contextoString = "Contexto não disponível. Usando conhecimento base.";
 }
 
-async function run(msg,hist){
-  hist.push({role:"user",content:msg});
-  const sys="Voce e um agente DevOps expert do projeto Fraga Dashboard. CONTEXTO: projeto Node.js TypeScript em /opt/fraga-dashboard. Stack: Express, tRPC, React, MySQL TiDB Cloud. PM2 processo: fraga-dashboard. Build: cd /opt/fraga-dashboard && npm run build. Restart: pm2 restart fraga-dashboard. Logs: pm2 logs fraga-dashboard --lines 50 --nostream. Banco: DATABASE_URL no arquivo /opt/fraga-dashboard/.env.production. Webhook NFS-e: /opt/fraga-dashboard/server/routes/zapcontabilWebhookMessageSetor.ts. Motor emissao: /opt/fraga-dashboard/server/services/nfseEmissionEngine.ts. Frontend: /opt/fraga-dashboard/client/src/pages/. NUNCA pergunte sobre credenciais ou APIs - tudo esta no .env.production. Execute sem pedir confirmacao.";
-  const tools=[{type:"function",function:{name:"bash",description:"Executa comando bash",parameters:{type:"object",properties:{command:{type:"string"}},required:["command"]}}}];
-  let loop=true;
-  while(loop){
-    const res=await client.chat.completions.create({model:"deepseek-chat",messages:[{role:"system",content:sys},...hist],tools,tool_choice:"auto"});
-    const msg2=res.choices[0].message;
-    hist.push(msg2);
-    if(msg2.content)console.log("\n🤖 "+msg2.content);
-    if(msg2.tool_calls&&msg2.tool_calls.length>0){
-      for(const tc of msg2.tool_calls){
-        const c=JSON.parse(tc.function.arguments).command;
-        console.log("\n📟 "+c);
-        const out=String(cmd(c)).substring(0,800);
-        console.log("📤 "+out);
-        hist.push({role:"tool",tool_call_id:tc.id,content:out});
-      }
-    }else{loop=false;}
+// Ler chave de API
+const env = readFileSync("/opt/fraga-dashboard/.env.production", "utf8");
+const deepKey = env
+  .split("\n")
+  .find((l) => l.startsWith("DEEPSEEK_API_KEY="))
+  ?.replace("DEEPSEEK_API_KEY=", "")
+  ?.trim();
+
+if (!deepKey) {
+  console.error("❌ ERRO: DEEPSEEK_API_KEY não encontrada em .env.production");
+  process.exit(1);
+}
+
+const client = new OpenAI({
+  baseURL: "https://api.deepseek.com",
+  apiKey: deepKey,
+});
+
+function cmd(c) {
+  if (!c || typeof c !== "string") return "Erro: comando invalido";
+  try {
+    return execSync(c, {
+      cwd: "/opt/fraga-dashboard",
+      timeout: 60000,
+      encoding: "utf8",
+    });
+  } catch (e) {
+    return (e.stdout || "") + (e.stderr || "") || e.message;
   }
+}
+
+async function run(msg, hist) {
+  hist.push({ role: "user", content: msg });
+
+  const systemPrompt = `Você é um agente DevOps expert do projeto Fraga Dashboard rodando em /opt/fraga-dashboard no Ubuntu.
+
+## 📚 CONTEXTO DO PROJETO
+
+${contextoString}
+
+## 🛠️ INSTRUÇÕES OPERACIONAIS
+
+1. Use bash para executar todos os comandos
+2. Build: npm run build
+3. Restart: pm2 restart fraga-dashboard
+4. Logs: pm2 logs fraga-dashboard --lines 50 --nostream
+5. Execute sem pedir confirmação
+6. Sempre use a ferramenta bash para executar ações
+
+## 📝 ESTRUTURA DE RESPOSTA
+
+- Mantenha respostas concisas
+- Forneça comandos prontos para executar
+- Explique o contexto apenas quando necessário
+- Use emojis para melhor legibilidade
+- Cite arquivos/rotas quando relevante`;
+
+  const response = await client.chat.completions.create({
+    model: "deepseek-chat",
+    max_tokens: 2048,
+    messages: [{role:"system",content:systemPrompt},...hist],
+  });
+
+  const assistantMsg = response.choices[0]?.message?.content || "Resposta vazia";
+
+  hist.push({ role: "assistant", content: assistantMsg });
+
+  // Procura por comandos bash (```bash ... ```)
+  const bashMatch = assistantMsg.match(/```bash\n([\s\S]*?)```/);
+  if (bashMatch) {
+    const bashCode = bashMatch[1].trim();
+    console.log("\n🔧 Executando comando sugerido:\n");
+    console.log(bashCode);
+    console.log("\n📤 Output:\n");
+    const output = cmd(bashCode);
+    console.log(output);
+  } else {
+    console.log("\n🤖 Resposta do DeepSeek:\n");
+    console.log(assistantMsg);
+  }
+
   return hist;
 }
 
-async function main(){
-  console.log("✅ Agente DeepSeek iniciado!\n");
-  const rl=readline.createInterface({input:process.stdin,output:process.stdout});
-  let hist=[];
-  const ask=()=>rl.question("Deep: ",async(inp)=>{
-    if(!inp||inp.trim()==="sair"){rl.close();return;}
-    hist=await run(inp.trim(),hist);
-    ask();
+// CLI interativo
+async function main() {
+  console.log("🚀 Agente DeepSeek - Fraga Dashboard");
+  console.log(
+    "📚 Contexto carregado de: scripts/CONTEXTO-DEEPSEEK.md (" +
+      contextoString.split("\n").length +
+      " linhas)"
+  );
+  console.log("💬 Digite 'sair' para encerrar\n");
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
   });
-  ask();
+
+  let hist = [];
+
+  const askQuestion = () => {
+    rl.question("👤 Você: ", async (input) => {
+      if (input.toLowerCase() === "sair") {
+        console.log("\n👋 Até logo!");
+        rl.close();
+        return;
+      }
+
+      if (input.trim()) {
+        try {
+          hist = await run(input, hist);
+        } catch (e) {
+          console.error("❌ Erro:", e.message);
+        }
+      }
+
+      askQuestion();
+    });
+  };
+
+  askQuestion();
 }
 
-main().catch(console.error);
+main();

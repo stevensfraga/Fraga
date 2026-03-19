@@ -363,6 +363,14 @@ const configRouter = router({
       return { success: true };
     }),
 
+  toggleAtivo: publicProcedure
+    .input(z.object({ id: z.number(), ativo: z.boolean() }))
+    .mutation(async ({ input, ctx }) => {
+      await rawExec("UPDATE nfse_config SET ativo = ? WHERE id = ?", [input.ativo ? 1 : 0, input.id]);
+      await auditLog(null, input.id, "config_toggle_ativo", { ativo: input.ativo }, ctx.user?.name || "admin");
+      return { success: true };
+    }),
+
   // Upload de certificado A1 (.pfx/.p12)
   uploadCertificado: publicProcedure
     .input(z.object({
@@ -654,6 +662,53 @@ const emissoesRouter = router({
       return { success: true };
     }),
 
+  // Cancela a nota no painel E no portal da prefeitura via Playwright (assíncrono)
+  cancelarNaPrefeitura: publicProcedure
+    .input(z.object({
+      id: z.number(),
+      justificativa: z.string().min(5, "Justificativa deve ter no mínimo 5 caracteres"),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const [emissao] = await rawQuery(
+        "SELECT id, status, numeroNf, configId, tomadorNome FROM nfse_emissoes WHERE id = ?",
+        [input.id]
+      );
+      if (!emissao) throw new Error("Emissão não encontrada");
+      const em = emissao as any;
+
+      if (em.status !== "emitida") {
+        throw new Error(`Só é possível cancelar notas com status "emitida". Status atual: ${em.status}`);
+      }
+
+      if (!em.numeroNf) throw new Error("Nota não possui número NF — não pode ser cancelada no portal");
+
+      // Marcar como em_cancelamento e retornar imediatamente (evita timeout do nginx)
+      await rawExec(
+        "UPDATE nfse_emissoes SET status = 'em_cancelamento' WHERE id = ?",
+        [input.id]
+      );
+      await auditLog(input.id, em.configId, "cancelamento_iniciado", {
+        numeroNf: em.numeroNf, justificativa: input.justificativa,
+      }, ctx.user?.name || "admin");
+
+      // Executar cancelamento via Playwright em background (fire-and-forget)
+      import("../services/nfseEmissionEngine").then(({ cancelNfse }) => {
+        cancelNfse(input.id, input.justificativa).then(async (result) => {
+          if (!result.success) {
+            // Reverter para emitida em caso de erro (portal não cancelou)
+            await rawExec("UPDATE nfse_emissoes SET status = 'emitida' WHERE id = ?", [input.id]);
+            await auditLog(input.id, em.configId, "cancelamento_erro", { error: result.error }, "system");
+            console.error(`[NfseCancel] Falha ao cancelar emissão ${input.id}:`, result.error);
+          }
+        }).catch(async (err) => {
+          await rawExec("UPDATE nfse_emissoes SET status = 'emitida' WHERE id = ?", [input.id]);
+          console.error(`[NfseCancel] Exceção ao cancelar emissão ${input.id}:`, err);
+        });
+      }).catch(console.error);
+
+      return { success: true, numeroNf: em.numeroNf, message: "Cancelamento iniciado no portal da prefeitura. Aguarde alguns minutos." };
+    }),
+
   downloadPdf: publicProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ input }) => {
@@ -664,6 +719,92 @@ const emissoesRouter = router({
       if (!row || !(row as any).pdfUrl) return null;
       return { url: (row as any).pdfUrl, numeroNfse: (row as any).numeroNfse };
     }),
+
+  // Métricas reais do mês atual
+  metrics: publicProcedure
+    .input(z.object({ competencia: z.string().optional() }))
+    .query(async ({ input }) => {
+      const now = new Date();
+      const comp = input.competencia ||
+        `${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
+
+      // Totais por status no mês
+      const [totais] = await rawQuery(
+        `SELECT
+           COUNT(*) as total,
+           SUM(CASE WHEN status = 'emitida' THEN 1 ELSE 0 END) as emitidas,
+           SUM(CASE WHEN status = 'em_processamento' THEN 1 ELSE 0 END) as processando,
+           SUM(CASE WHEN status = 'erro' THEN 1 ELSE 0 END) as erros,
+           SUM(CASE WHEN status = 'rascunho' THEN 1 ELSE 0 END) as rascunhos,
+           SUM(CASE WHEN status = 'cancelada' THEN 1 ELSE 0 END) as canceladas,
+           COALESCE(SUM(CASE WHEN status = 'emitida' THEN valor ELSE 0 END), 0) as valorEmitido,
+           COALESCE(SUM(valor), 0) as valorTotal
+         FROM nfse_emissoes
+         WHERE competencia = ?`,
+        [comp]
+      );
+
+      // Breakdown por empresa no mês
+      const porEmpresa = await rawQuery(
+        `SELECT c.razaoSocial, c.cnpj,
+                COUNT(*) as total,
+                SUM(CASE WHEN e.status = 'emitida' THEN 1 ELSE 0 END) as emitidas,
+                COALESCE(SUM(CASE WHEN e.status = 'emitida' THEN e.valor ELSE 0 END), 0) as valorEmitido
+         FROM nfse_emissoes e
+         LEFT JOIN nfse_config c ON c.id = e.configId
+         WHERE e.competencia = ?
+         GROUP BY e.configId, c.razaoSocial, c.cnpj
+         ORDER BY valorEmitido DESC`,
+        [comp]
+      );
+
+      // Histórico dos últimos 6 meses (contagem de emitidas)
+      const historico = await rawQuery(
+        `SELECT competencia,
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'emitida' THEN 1 ELSE 0 END) as emitidas,
+                COALESCE(SUM(CASE WHEN status = 'emitida' THEN valor ELSE 0 END), 0) as valorEmitido
+         FROM nfse_emissoes
+         WHERE createdAt >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+         GROUP BY competencia
+         ORDER BY STR_TO_DATE(CONCAT('01/', competencia), '%d/%m/%Y') DESC
+         LIMIT 6`
+      );
+
+      return {
+        competencia: comp,
+        totais: totais as any,
+        porEmpresa,
+        historico,
+      };
+    }),
+
+  // Fila de processamento em tempo real
+  fila: publicProcedure.query(async () => {
+    const processando = await rawQuery(
+      `SELECT e.id, e.configId, e.tomadorNome, e.valor, e.competencia,
+              e.status, e.createdAt, e.processadoEm, e.erroDetalhes,
+              c.razaoSocial as prestadorNome
+       FROM nfse_emissoes e
+       LEFT JOIN nfse_config c ON c.id = e.configId
+       WHERE e.status IN ('em_processamento', 'em_cancelamento')
+       ORDER BY e.createdAt DESC
+       LIMIT 20`
+    );
+
+    const errosRecentes = await rawQuery(
+      `SELECT e.id, e.configId, e.tomadorNome, e.valor, e.competencia,
+              e.status, e.createdAt, e.erroDetalhes,
+              c.razaoSocial as prestadorNome
+       FROM nfse_emissoes e
+       LEFT JOIN nfse_config c ON c.id = e.configId
+       WHERE e.status = 'erro' AND e.createdAt >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+       ORDER BY e.createdAt DESC
+       LIMIT 10`
+    );
+
+    return { processando, errosRecentes };
+  }),
 
   // Callbacks do motor de emissão (server-side only)
   markEmitida: publicProcedure
@@ -936,6 +1077,76 @@ const nfseDiagRouter = router({
 });
 
 // ══════════════════════════════════════════════════════════════════════
+// Usuários Autorizados Router — telefones autorizados por empresa
+// ══════════════════════════════════════════════════════════════════════
+
+const usuariosAutorizadosRouter = router({
+  list: publicProcedure
+    .input(z.object({ configId: z.number().optional() }))
+    .query(async ({ input }) => {
+      try {
+        if (input.configId !== undefined) {
+          return rawQuery(
+            `SELECT id, configId, nome, telefone, ativo, criado_em as created_at
+             FROM nfse_usuarios_autorizados WHERE configId = ? ORDER BY nome`,
+            [input.configId]
+          );
+        }
+        return rawQuery(
+          `SELECT id, configId, nome, telefone, ativo, criado_em as created_at
+           FROM nfse_usuarios_autorizados ORDER BY nome`
+        );
+      } catch {
+        // Fallback: colunas configId/nome podem não existir ainda (antes da migration)
+        return rawQuery(
+          `SELECT id, NULL as configId, '' as nome, telefone, ativo FROM nfse_usuarios_autorizados ORDER BY telefone`
+        );
+      }
+    }),
+
+  create: publicProcedure
+    .input(z.object({
+      configId: z.number(),
+      nome: z.string().min(1),
+      telefone: z.string().min(10),
+    }))
+    .mutation(async ({ input }) => {
+      const telefone = input.telefone.replace(/\D/g, "");
+      try {
+        const result = await rawExec(
+          `INSERT INTO nfse_usuarios_autorizados (configId, nome, telefone, ativo) VALUES (?, ?, ?, 1)`,
+          [input.configId, input.nome, telefone]
+        );
+        return { id: result.insertId, success: true };
+      } catch {
+        // Fallback sem configId/nome
+        const result = await rawExec(
+          `INSERT INTO nfse_usuarios_autorizados (telefone, ativo) VALUES (?, 1)`,
+          [telefone]
+        );
+        return { id: result.insertId, success: true };
+      }
+    }),
+
+  toggle: publicProcedure
+    .input(z.object({ id: z.number(), ativo: z.boolean() }))
+    .mutation(async ({ input }) => {
+      await rawExec(
+        `UPDATE nfse_usuarios_autorizados SET ativo = ? WHERE id = ?`,
+        [input.ativo ? 1 : 0, input.id]
+      );
+      return { success: true };
+    }),
+
+  delete: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await rawExec(`DELETE FROM nfse_usuarios_autorizados WHERE id = ?`, [input.id]);
+      return { success: true };
+    }),
+});
+
+// ══════════════════════════════════════════════════════════════════════
 // Main NFS-e Router
 // ══════════════════════════════════════════════════════════════════════
 
@@ -947,4 +1158,5 @@ export const nfseRouter = router({
   audit: nfseAuditRouter,
   session: nfseSessionRouter,
   diag: nfseDiagRouter,
+  usuariosAutorizados: usuariosAutorizadosRouter,
 });

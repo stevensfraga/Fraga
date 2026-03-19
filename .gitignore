@@ -41,3 +41,4 @@ npm-debug.log*
 # Temp
 .tmp
 tmp/
+.env.production
