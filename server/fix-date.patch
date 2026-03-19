@@ -1,0 +1,37 @@
+--- a/dispatchTestRouter.ts
++++ b/dispatchTestRouter.ts
+@@ -1501,7 +1501,25 @@
+         const clientName = item.cliente?.nome || 'Cliente Conta Azul';
+         const whatsappNumber = item.cliente?.telefone || '';
+         const amount = item.valor || 0;
+-        const dueDate = item.dataVencimento;
++        // Parsear dataVencimento com validacao
++        let dueDateObj: Date | null = null;
++        if (item.dataVencimento) {
++          try {
++            const parsed = new Date(item.dataVencimento);
++            if (!isNaN(parsed.getTime())) {
++              dueDateObj = parsed;
++            }
++          } catch (e) {
++            console.warn(`[Sync] Invalid date for ${contaAzulId}: ${item.dataVencimento}`);
++          }
++        }
++        
++        if (!dueDateObj) {
++          console.warn(`[Sync] Skipping item ${contaAzulId}: invalid or missing dueDate`);
++          continue;
++        }
++
+         const status = item.status === 'aberto' ? 'pending' : (item.status === 'pago' ? 'paid' : 'pending');
+         const linhaDigitavel = item.linhaDigitavel || null;
+         const link = item.link || null;
+@@ -1548,7 +1566,7 @@
+             clientId,
+             contaAzulId,
+             amount: amount as any,
+-            dueDate: new Date(dueDate),
++            dueDate: dueDateObj,
+             linhaDigitavel,
+             link,
+             source: 'conta-azul',

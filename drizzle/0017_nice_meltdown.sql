@@ -1,0 +1,1 @@
+ALTER TABLE `receivables` ADD `source` varchar(20) DEFAULT 'test' NOT NULL;

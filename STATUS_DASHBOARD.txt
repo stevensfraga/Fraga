@@ -1,0 +1,152 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                   🏥 DASHBOARD STATUS - FRAGA                             ║
+║                     Sistema de Monitoramento Operacional                   ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+┌─ APLICAÇÃO ──────────────────────────────────────────────────────────────┐
+│                                                                            │
+│  Nome:           fraga-dashboard v1.0.0                                   │
+│  Status:         ✅ ONLINE                                                │
+│  PID:            247898                                                   │
+│  Uptime:         45+ minutos                                              │
+│  CPU:            0% (idle)                                                │
+│  Memória:        227.8 MB                                                 │
+│  Porta:          3000 (0.0.0.0)                                           │
+│  Modo:           fork (PM2)                                               │
+│  Reinicios:      0 (100% estável)                                         │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ BANCO DE DADOS ─────────────────────────────────────────────────────────┐
+│                                                                            │
+│  Tipo:           MySQL via TiDB Cloud                                     │
+│  Host:           gateway02.us-east-1.prod.aws.tidbcloud.com:4000          │
+│  Status:         ✅ CONECTADO                                             │
+│  SSL:            ✅ Habilitado                                            │
+│  ORM:            Drizzle ORM 0.44.7                                       │
+│  Driver:         mysql2 3.20.0                                            │
+│  Pool Conns:     Automático                                               │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ INFRAESTRUTURA ─────────────────────────────────────────────────────────┐
+│                                                                            │
+│  OS:              Ubuntu 22.04                                            │
+│  Node.js:        v22.22.1                                                 │
+│  NPM:            10.9.4                                                   │
+│  Container:      containerd (ativo)                                       │
+│  Nginx:          ✅ Rodando (80/443)                                      │
+│  Espaço Livre:   Adequado (partição /opt)                                 │
+│  Memória RAM:    Disponível                                               │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ WEBHOOKS & PROCESSAMENTO ───────────────────────────────────────────────┐
+│                                                                            │
+│  ZapWebhook:          ✅ Processando                                      │
+│  SETOR-NF:            ✅ Ativo (nota fiscal)                             │
+│  ZAPCONTABIL-ALIAS:   ✅ Roteando                                         │
+│  Taxa Processamento:  ~100% sucesso                                       │
+│  Logs Realtime:       Disponível via PM2                                  │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ MONITORAMENTO & AUTO-RECUPERAÇÃO ──────────────────────────────────────┐
+│                                                                            │
+│  ✅ Monitor Automático:        ATIVO                                      │
+│     Script: /opt/fraga-dashboard/monitor-auto-recovery.sh                 │
+│     Intervalo: 30 segundos                                                │
+│     Max Retries: 3 tentativas                                             │
+│                                                                            │
+│  ✅ Health Check API:          CONFIGURADO                                │
+│     Script: /opt/fraga-dashboard/health-check.sh                          │
+│     Formato: JSON                                                         │
+│     Dados: Status, CPU, Memória, Timestamp                                │
+│                                                                            │
+│  ✅ Auto-Restart PM2:          HABILITADO                                 │
+│     Max Memory: 500MB                                                     │
+│     Graceful Shutdown: 5s                                                 │
+│     Logwatch: Habilitado                                                  │
+│                                                                            │
+│  ✅ Testes Automáticos:        7/7 PASSANDO                               │
+│     PM2 Status ✅                                                         │
+│     Porta 3000 ✅                                                         │
+│     HTTP 200 ✅                                                           │
+│     Database ✅                                                           │
+│     Dependências ✅                                                       │
+│     Build Artifacts ✅                                                    │
+│     Memória ✅                                                            │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ CONFIGURAÇÃO & SEGURANÇA ───────────────────────────────────────────────┐
+│                                                                            │
+│  .env Produção:      ✅ Configurado                                       │
+│  DATABASE_URL:       ✅ TiDB Cloud com SSL                                │
+│  OAUTH_SERVER:       ✅ auth.prod.aws.fraga.com.br                       │
+│  NODE_ENV:           production                                           │
+│  Certificados SSL:   ✅ Em /opt/fraga-dashboard/certs/                    │
+│  Vulnerabilidades:   ⚠️  7 moderadas (não-críticas)                      │
+│  Build System:       ✅ Vite 7.3.1 + esbuild                             │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ ARQUIVOS CRIADOS/ATUALIZADOS ──────────────────────────────────────────┐
+│                                                                            │
+│  📄 monitor-auto-recovery.sh       → Auto-recuperação em segundo plano    │
+│  📄 health-check.sh                → API Health Check (JSON)              │
+│  📄 test-system.sh                 → Suite de testes automáticos          │
+│  📄 ecosystem.config.js            → PM2 com configuração avançada        │
+│  📄 DIAGNOSTICO_FINAL.md           → Relatório técnico completo          │
+│  📄 RELATORIO_OPERACIONAL.md       → Documentação operacional             │
+│  📄 STATUS_DASHBOARD.txt           → Este arquivo                         │
+│  📦 package-lock.json              → Lock file regenerado                │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ PRÓXIMAS AÇÕES ─────────────────────────────────────────────────────────┐
+│                                                                            │
+│  □ Monitoramento Contínuo via PM2 (automático)                            │
+│  □ Health Checks a cada 30s (automático)                                  │
+│  □ Auto-recovery em caso de falha (automático)                            │
+│  ☐ Executar `npm audit fix` em manutenção futura                          │
+│  ☐ Revisar logs em /var/log/fraga-dashboard/ periodicamente               │
+│  ☐ Sincronizar package-lock.json com git repo                             │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌─ COMANDOS ÚTEIS ─────────────────────────────────────────────────────────┐
+│                                                                            │
+│  # Monitorar em tempo real                                                │
+│  pm2 logs fraga-dashboard --lines 100 --nostream                          │
+│                                                                            │
+│  # Health check                                                           │
+│  bash /opt/fraga-dashboard/health-check.sh                                │
+│                                                                            │
+│  # Testes do sistema                                                      │
+│  bash /opt/fraga-dashboard/test-system.sh                                 │
+│                                                                            │
+│  # Status PM2                                                             │
+│  pm2 status && pm2 show fraga-dashboard                                    │
+│                                                                            │
+│  # Reiniciar aplicação                                                    │
+│  pm2 restart fraga-dashboard                                              │
+│                                                                            │
+│  # Ver toda a informação                                                  │
+│  pm2 monit                                                                │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                        🟢 SISTEMA OPERACIONAL 🟢                          ║
+║                                                                            ║
+║  Status Geral:       ✅ SAUDÁVEL                                          ║
+║  Diagnóstico:        ✅ COMPLETO                                          ║
+║  Monitoramento:      ✅ ATIVO                                             ║
+║  Auto-Recuperação:   ✅ CONFIGURADA                                       ║
+║  Última Atualização: $(date '+%d/%m/%Y %H:%M:%S UTC')                  ║
+║                                                                            ║
+║  Contato: DevOps Agent (Orquestração Automática)                          ║
+║  Ambiente: Production (AWS TiDB Cloud)                                    ║
+║  Versão Projeto: 1.0.0                                                    ║
+╚════════════════════════════════════════════════════════════════════════════╝

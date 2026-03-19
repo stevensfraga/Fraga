@@ -1,0 +1,1 @@
+ALTER TABLE `receivables` MODIFY COLUMN `paymentInfoSource` enum('zap_storage','r2','contaazul','manual','worker','stored','api','panel','fallback');

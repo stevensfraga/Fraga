@@ -1,0 +1,49 @@
+
+/**
+ * PUT /api/zapcontabil/setor-nota-fiscal
+ * Alias de suporte: permite PUT além de POST para mesma funcionalidade
+ */
+router.put("/setor-nota-fiscal", async (req, res) => {
+  console.log("[SETOR-NF] 🔀 Alias PUT /setor-nota-fiscal chamado — redirecionando internamente para POST");
+  // Converter PUT em POST internamente
+  const postHandler = router.stack.find((layer: any) => {
+    return layer.route && layer.route.methods.post && layer.route.path === '/setor-nota-fiscal';
+  });
+  if (postHandler) {
+    // Criar req fake com método POST
+    const originalMethod = req.method;
+    (req as any).method = 'POST';
+    postHandler.handle(req, res, () => {
+      (req as any).method = originalMethod;
+      res.status(200).json({ success: false, reason: "Rota não processada" });
+    });
+  } else {
+    console.warn("[SETOR-NF] ⚠️ Handler POST não encontrado para redirecionar");
+    res.status(404).json({ success: false, reason: "POST handler not found" });
+  }
+});
+
+/**
+ * PUT /api/zapcontabil/webhook-message-setor
+ * Alias de suporte: permite PUT além de POST para mesma funcionalidade
+ */
+router.put("/webhook-message-setor", async (req, res) => {
+  console.log("[SETOR-NF] 🔀 Alias PUT /webhook-message-setor chamado — redirecionando internamente para POST");
+  // Converter PUT em POST internamente
+  const postHandler = router.stack.find((layer: any) => {
+    return layer.route && layer.route.methods.post && layer.route.path === '/webhook-message-setor';
+  });
+  if (postHandler) {
+    // Criar req fake com método POST
+    const originalMethod = req.method;
+    (req as any).method = 'POST';
+    postHandler.handle(req, res, () => {
+      (req as any).method = originalMethod;
+      res.status(200).json({ success: false, reason: "Rota não processada" });
+    });
+  } else {
+    console.warn("[SETOR-NF] ⚠️ Handler POST não encontrado para redirecionar");
+    res.status(404).json({ success: false, reason: "POST handler not found" });
+  }
+});
+

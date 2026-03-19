@@ -1,0 +1,89 @@
+CORE REFERENCE LOG — PADRÃO OURO DO MOTOR NFS-e
+================================================
+Checkpoint baseline: b1a85c9f
+Data: 14/03/2026
+Portal: Vila Velha (SMARAPD) — tributacao.vilavelha.es.gov.br
+Empresa: S.T. FRAGA CONTABILIDADE LTDA (CCM 43902 / CNPJ 07.838.084/0001-86)
+NFS-e emitida: 1012
+Resultado: SUCCESS
+
+WARNs ACEITÁVEIS (não são falhas, não indicam regressão):
+  ⚠️ SESSION_EXPIRED        — sessão expirada, motor reautentica automaticamente
+  ⚠️ NBS_AUTOCOMPLETE_NO_ITEM — autocomplete vazio, normal, usa API direta
+  ⚠️ NBS_API_PARSE          — parse parcial do HTML, ID extraído por fallback
+  ⚠️ PDF_DOWNLOAD           — download de PDF não implementado ainda
+
+SEQUÊNCIA DE STEPS DO TESTE DE REFERÊNCIA:
+------------------------------------------
+✅ INIT
+✅ PORTAL_LOADED
+✅ AUTH_STRATEGY
+✅ USING_PERSISTENT_SESSION
+✅ NAVIGATE
+⚠️ SESSION_EXPIRED                    [WARN aceitável]
+✅ AUTH_STRATEGY
+✅ NAVIGATE
+✅ LOGIN_CAPTCHA_DETECTED
+✅ CAPTCHA_ATTEMPT
+✅ CAPTCHA_SENT_TO_LLM
+✅ CAPTCHA_SOLVED
+✅ FORM_FILLED
+✅ LOGIN_OK
+✅ LOGIN_OK
+✅ SESSION_RENEWED
+✅ CLICK_NOTA_FISCAL
+✅ EMPRESA_GRID_VISIBLE
+✅ EMPRESA_CONTINUAR_CLICKED
+✅ EMPRESA_ROW_CLICKED
+✅ SELECT_EMPRESA_SCREENSHOT
+✅ SELECT_EMPRESA
+✅ NAVIGATE_EMISSION_START
+✅ NAVIGATE_SCREENSHOT
+✅ NFSE_MENU_VISIBLE
+✅ NAVIGATE_EMISSION
+✅ TOMADOR_CNPJ_FIELD
+✅ TOMADOR_CNPJ_FILL
+✅ TOMADOR_CNPJ_LOADING
+✅ TOMADOR_END_CHECKBOX
+✅ TOMADOR_CEP_FILL
+✅ TOMADOR_LOGRADOURO_FILL
+✅ TOMADOR_NUMERO_FILL
+✅ TOMADOR_BAIRRO_FILL
+✅ TOMADOR_CIDADE_FILL
+✅ TOMADOR_ESTADO_FILL
+✅ TOMADOR_PAIS_FILL
+✅ ATIVIDADE_START
+✅ ATIVIDADE_SELECT_OK
+✅ ATIVIDADE_OK
+✅ NBS_START
+✅ NBS_FORM_CONTEXT
+✅ NBS_INITIAL_STATE
+✅ NBS_INIT_AUTOSUGGEST
+✅ NBS_NETWORK_REQUESTS
+✅ NBS_AUTOCOMPLETE_HTML
+⚠️ NBS_AUTOCOMPLETE_NO_ITEM           [WARN aceitável — usa API direta]
+✅ NBS_API_PROBE
+⚠️ NBS_API_PARSE                      [WARN aceitável — ID extraído por fallback]
+✅ NBS_JS_FALLBACK
+✅ NBS_FILLED
+✅ PAIS_FILLED
+✅ MUNICIPIO_HIDDEN_FIELDS
+✅ MUNICIPIO_LIST_SCREENSHOT
+✅ MUNICIPIO_FILLED
+✅ MUNICIPIO_VALIDATED
+✅ ESTADO_FILLED
+✅ ITEM_ADDED
+✅ ATIVIDADE_FINAL_START
+✅ ATIVIDADE_FINAL_OK
+✅ ATIVIDADE_FINAL_VERIFY
+✅ FORM_FILLED
+✅ PRE_SUBMIT_SCREENSHOT_TOP
+✅ PRE_SUBMIT_SCREENSHOT_BOTTOM
+✅ ATIVIDADE_PRE_SUBMIT
+✅ NBS_PRE_SUBMIT
+✅ SUBMIT_SUCCESS_MODAL
+✅ SUBMIT                              [numeroNfse: "1012", source: "success_modal"]
+⚠️ PDF_DOWNLOAD                       [WARN aceitável — próxima evolução]
+✅ EMISSAO_COMPLETED                   [numeroNfse: "1012"]
+
+RESULTADO FINAL: SUCCESS — NFS-e 1012 emitida com sucesso

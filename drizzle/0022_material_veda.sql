@@ -1,0 +1,1 @@
+ALTER TABLE `clients` ADD `contaAzulPersonId` varchar(64);

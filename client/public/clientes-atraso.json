@@ -1,0 +1,1191 @@
+{
+  "total": 119,
+  "por_faixa": {
+    "friendly": 10,
+    "administrative": 13,
+    "formal": 96
+  },
+  "valor_total": 202305.21,
+  "clientes": [
+    {
+      "id": "07485216000133",
+      "nome": "TCVV TERMINAL DE CONTAINER VILA VELHA LTDA",
+      "dias_atraso": 152,
+      "valor_atraso": 20650,
+      "faixa": "formal",
+      "num_parcelas": 4,
+      "vencimento_mais_antigo": "07/09/2025",
+      "telefone": "(27) 99902-2542"
+    },
+    {
+      "id": "03232776000125",
+      "nome": "ELLY PRODUTOS OTICOS",
+      "dias_atraso": 307,
+      "valor_atraso": 16189.95,
+      "faixa": "formal",
+      "num_parcelas": 9,
+      "vencimento_mais_antigo": "05/04/2025",
+      "telefone": "27997465633"
+    },
+    {
+      "id": "25186264000102",
+      "nome": "JU AGUIAR - ESTÉTICA, CURSOS E TREINAMENTOS LTDA",
+      "dias_atraso": 163,
+      "valor_atraso": 15529.02,
+      "faixa": "formal",
+      "num_parcelas": 22,
+      "vencimento_mais_antigo": "27/08/2025",
+      "telefone": "(27) 9983-3095"
+    },
+    {
+      "id": "36060609000101",
+      "nome": "NVS - TRANSPORTES DE CONTAINERES",
+      "dias_atraso": 152,
+      "valor_atraso": 9180,
+      "faixa": "formal",
+      "num_parcelas": 5,
+      "vencimento_mais_antigo": "07/09/2025",
+      "telefone": "(27) 99902-2542"
+    },
+    {
+      "id": "31494039000136",
+      "nome": "DU VALLE MATOS MOVEIS E DECORACAO LTDA",
+      "dias_atraso": 185,
+      "valor_atraso": 7573.15,
+      "faixa": "formal",
+      "num_parcelas": 10,
+      "vencimento_mais_antigo": "05/08/2025",
+      "telefone": "(27) 99936-8566"
+    },
+    {
+      "id": "47454499000170",
+      "nome": "TAELHO LTDA",
+      "dias_atraso": 133,
+      "valor_atraso": 6209.900000000001,
+      "faixa": "formal",
+      "num_parcelas": 18,
+      "vencimento_mais_antigo": "26/09/2025",
+      "telefone": "(27) 99972-1275"
+    },
+    {
+      "id": "50486746000125",
+      "nome": "LABORATORIO OTICO VISION VIX LTDA",
+      "dias_atraso": 133,
+      "valor_atraso": 5549.799999999999,
+      "faixa": "formal",
+      "num_parcelas": 13,
+      "vencimento_mais_antigo": "26/09/2025",
+      "telefone": "(27) 99894-0612"
+    },
+    {
+      "id": "54861486000181",
+      "nome": "J&L ADMINISTRACAO E CONSULTORIA IMOBILIARIAS",
+      "dias_atraso": 133,
+      "valor_atraso": 5461.599999999999,
+      "faixa": "formal",
+      "num_parcelas": 17,
+      "vencimento_mais_antigo": "26/09/2025",
+      "telefone": "(27) 9279-2176"
+    },
+    {
+      "id": "50270561000189",
+      "nome": "LUCINEA ARCHANGELO TITONELLI",
+      "dias_atraso": 133,
+      "valor_atraso": 5169.09,
+      "faixa": "formal",
+      "num_parcelas": 19,
+      "vencimento_mais_antigo": "26/09/2025",
+      "telefone": "(27) 99911-0379"
+    },
+    {
+      "id": "63270504000141",
+      "nome": "LLA GESTAO DE NEGOCIOS LTDA",
+      "dias_atraso": 93,
+      "valor_atraso": 4800,
+      "faixa": "formal",
+      "num_parcelas": 4,
+      "vencimento_mais_antigo": "05/11/2025",
+      "telefone": "(27) 99979-7300"
+    },
+    {
+      "id": "97545519000197",
+      "nome": "ADALGISA NASCIMENTO ROSA DE ARAUJO",
+      "dias_atraso": 200,
+      "valor_atraso": 4452.4,
+      "faixa": "formal",
+      "num_parcelas": 10,
+      "vencimento_mais_antigo": "21/07/2025",
+      "telefone": "(27) 98854-1828"
+    },
+    {
+      "id": "44368772000156",
+      "nome": "PRIMOPX",
+      "dias_atraso": 256,
+      "valor_atraso": 4242.7,
+      "faixa": "formal",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "26/05/2025",
+      "telefone": "(71) 9623-9858"
+    },
+    {
+      "id": "63823887000138",
+      "nome": "DI BENEDETTO ALIMENTOS LTDA",
+      "dias_atraso": 72,
+      "valor_atraso": 3690,
+      "faixa": "formal",
+      "num_parcelas": 5,
+      "vencimento_mais_antigo": "26/11/2025",
+      "telefone": "(11) 99329-3083"
+    },
+    {
+      "id": "26164876000167",
+      "nome": "M. F. ALBUQUERQUE",
+      "dias_atraso": 68,
+      "valor_atraso": 3500,
+      "faixa": "formal",
+      "num_parcelas": 5,
+      "vencimento_mais_antigo": "30/11/2025",
+      "telefone": "(27) 3219-2300"
+    },
+    {
+      "id": "11020544000131",
+      "nome": "CHECK-UP CLINICA",
+      "dias_atraso": 124,
+      "valor_atraso": 3490,
+      "faixa": "formal",
+      "num_parcelas": 5,
+      "vencimento_mais_antigo": "05/10/2025",
+      "telefone": "(27) 3311-5252"
+    },
+    {
+      "id": "22983296000140",
+      "nome": "TASSIA PANETTO NETO",
+      "dias_atraso": 256,
+      "valor_atraso": 3480,
+      "faixa": "formal",
+      "num_parcelas": 10,
+      "vencimento_mais_antigo": "26/05/2025",
+      "telefone": "(27) 99249-2240"
+    },
+    {
+      "id": "59772076000188",
+      "nome": "V&S CONSULTORIA LTDA",
+      "dias_atraso": 123,
+      "valor_atraso": 3470,
+      "faixa": "formal",
+      "num_parcelas": 14,
+      "vencimento_mais_antigo": "06/10/2025",
+      "telefone": "(22) 9229-9431"
+    },
+    {
+      "id": "33207813000106",
+      "nome": "MAURO LICURGO",
+      "dias_atraso": 256,
+      "valor_atraso": 2811.69,
+      "faixa": "formal",
+      "num_parcelas": 23,
+      "vencimento_mais_antigo": "26/05/2025",
+      "telefone": "(27) 9997-6787"
+    },
+    {
+      "id": "44647127000172",
+      "nome": "LS ENGENHARIA E PROJETOS",
+      "dias_atraso": 14,
+      "valor_atraso": 2759.9999999999995,
+      "faixa": "friendly",
+      "num_parcelas": 9,
+      "vencimento_mais_antigo": "23/01/2026",
+      "telefone": "(27) 99873-2489"
+    },
+    {
+      "id": "61881376000147",
+      "nome": "EDMILTON VIEIRA DE SOUZA SILVA",
+      "dias_atraso": 130,
+      "valor_atraso": 2660,
+      "faixa": "formal",
+      "num_parcelas": 8,
+      "vencimento_mais_antigo": "29/09/2025",
+      "telefone": "(27) 9222-5901"
+    },
+    {
+      "id": "28437358000103",
+      "nome": "PADRAO",
+      "dias_atraso": 356,
+      "valor_atraso": 2515.5,
+      "faixa": "formal",
+      "num_parcelas": 5,
+      "vencimento_mais_antigo": "15/02/2025",
+      "telefone": null
+    },
+    {
+      "id": "32087043000142",
+      "nome": "SERRAO E MARIANO SERVICOS MEDICOS LTDA",
+      "dias_atraso": 133,
+      "valor_atraso": 2250,
+      "faixa": "formal",
+      "num_parcelas": 7,
+      "vencimento_mais_antigo": "26/09/2025",
+      "telefone": "(27) 9508-6166"
+    },
+    {
+      "id": "16797766000189",
+      "nome": "IGREJA BATISTA BETEL ALVORADA",
+      "dias_atraso": 93,
+      "valor_atraso": 2125,
+      "faixa": "formal",
+      "num_parcelas": 6,
+      "vencimento_mais_antigo": "05/11/2025",
+      "telefone": "(27) 99928-8402"
+    },
+    {
+      "id": "34477585000157",
+      "nome": "EDUARDO DO ESPIRITO SANTO BOASQUEVISQUE",
+      "dias_atraso": 68,
+      "valor_atraso": 2100,
+      "faixa": "formal",
+      "num_parcelas": 4,
+      "vencimento_mais_antigo": "30/11/2025",
+      "telefone": "(27) 9811-0661"
+    },
+    {
+      "id": "22362465000125",
+      "nome": "VERDE FOLHA",
+      "dias_atraso": 336,
+      "valor_atraso": 1980,
+      "faixa": "formal",
+      "num_parcelas": 12,
+      "vencimento_mais_antigo": "07/03/2025",
+      "telefone": "(27) 3084-5005"
+    },
+    {
+      "id": "44553174000157",
+      "nome": "DRILLING CONNECT SERVICOS DE INTERMEDIACAO LTDA",
+      "dias_atraso": 133,
+      "valor_atraso": 1920,
+      "faixa": "formal",
+      "num_parcelas": 7,
+      "vencimento_mais_antigo": "26/09/2025",
+      "telefone": "(27) 99867-9808"
+    },
+    {
+      "id": "17120111000134",
+      "nome": "J.A.A. DE MENEZES COMERCIO DE ROUPAS",
+      "dias_atraso": 124,
+      "valor_atraso": 1920,
+      "faixa": "formal",
+      "num_parcelas": 7,
+      "vencimento_mais_antigo": "05/10/2025",
+      "telefone": "(19) 98440-4570"
+    },
+    {
+      "id": "32100566000181",
+      "nome": "BARBEARIA DO EDY LTDA",
+      "dias_atraso": 130,
+      "valor_atraso": 1800,
+      "faixa": "formal",
+      "num_parcelas": 6,
+      "vencimento_mais_antigo": "29/09/2025",
+      "telefone": "(27) 9282-5076"
+    },
+    {
+      "id": "12748634000106",
+      "nome": "CM2MONTAGENS",
+      "dias_atraso": 141,
+      "valor_atraso": 1720,
+      "faixa": "formal",
+      "num_parcelas": 6,
+      "vencimento_mais_antigo": "18/09/2025",
+      "telefone": "(27) 99291-4413"
+    },
+    {
+      "id": "38127708000180",
+      "nome": "EDUARDO SOUZA NEGOCIOS IMOBILIARIOS LTDA",
+      "dias_atraso": 93,
+      "valor_atraso": 1650,
+      "faixa": "formal",
+      "num_parcelas": 6,
+      "vencimento_mais_antigo": "05/11/2025",
+      "telefone": "(27) 9867-9808"
+    },
+    {
+      "id": "46363662000127",
+      "nome": "ELEGANCE MOVEIS PLANEJADOS",
+      "dias_atraso": 154,
+      "valor_atraso": 1532.05,
+      "faixa": "formal",
+      "num_parcelas": 9,
+      "vencimento_mais_antigo": "05/09/2025",
+      "telefone": "(27) 9830-0104"
+    },
+    {
+      "id": "13937716000161",
+      "nome": "VICKI STONE LTDA",
+      "dias_atraso": 1,
+      "valor_atraso": 1495,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/02/2026",
+      "telefone": "(28) 3521-2325"
+    },
+    {
+      "id": "42658417000196",
+      "nome": "LUIZ CARLOS LEMOS GONCALVES",
+      "dias_atraso": 256,
+      "valor_atraso": 1446.6599999999999,
+      "faixa": "formal",
+      "num_parcelas": 9,
+      "vencimento_mais_antigo": "26/05/2025",
+      "telefone": "(27) 9699-2724"
+    },
+    {
+      "id": "45035259000106",
+      "nome": "REINART EVENTOS",
+      "dias_atraso": 68,
+      "valor_atraso": 1402.5,
+      "faixa": "formal",
+      "num_parcelas": 6,
+      "vencimento_mais_antigo": "30/11/2025",
+      "telefone": "(27) 99868-2266"
+    },
+    {
+      "id": "02390377000120",
+      "nome": "TRAVEZZANI PISOS",
+      "dias_atraso": 9,
+      "valor_atraso": 1400,
+      "faixa": "friendly",
+      "num_parcelas": 3,
+      "vencimento_mais_antigo": "28/01/2026",
+      "telefone": "(27) 3339-5941"
+    },
+    {
+      "id": "38538429000100",
+      "nome": "ROMERO RIVIER",
+      "dias_atraso": 133,
+      "valor_atraso": 1360,
+      "faixa": "formal",
+      "num_parcelas": 9,
+      "vencimento_mais_antigo": "26/09/2025",
+      "telefone": "(27) 99696-4164"
+    },
+    {
+      "id": "31380390000104",
+      "nome": "BOY VINY EXPRESS",
+      "dias_atraso": 32,
+      "valor_atraso": 1355,
+      "faixa": "administrative",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/01/2026",
+      "telefone": "(27) 98155-0706"
+    },
+    {
+      "id": "48077626000122",
+      "nome": "UNICO DONO VEICULOS LTDA",
+      "dias_atraso": 68,
+      "valor_atraso": 1350,
+      "faixa": "formal",
+      "num_parcelas": 4,
+      "vencimento_mais_antigo": "30/11/2025",
+      "telefone": "(27) 9979-7300"
+    },
+    {
+      "id": "45006535000108",
+      "nome": "KM PNEUS VIX LTDA",
+      "dias_atraso": 93,
+      "valor_atraso": 1320,
+      "faixa": "formal",
+      "num_parcelas": 4,
+      "vencimento_mais_antigo": "05/11/2025",
+      "telefone": "(27) 99652-4871"
+    },
+    {
+      "id": "27747535000187",
+      "nome": "E. BRITO MOREIRA ME",
+      "dias_atraso": 133,
+      "valor_atraso": 1280,
+      "faixa": "formal",
+      "num_parcelas": 9,
+      "vencimento_mais_antigo": "26/09/2025",
+      "telefone": "(27) 99884-2896"
+    },
+    {
+      "id": "52040414000148",
+      "nome": "RENATA AVANZA ENDOCRINOLOGIA LTDA",
+      "dias_atraso": 58,
+      "valor_atraso": 1240,
+      "faixa": "administrative",
+      "num_parcelas": 3,
+      "vencimento_mais_antigo": "10/12/2025",
+      "telefone": "(27) 99943-1904"
+    },
+    {
+      "id": "60948074000186",
+      "nome": "L DE S PEREIRA",
+      "dias_atraso": 93,
+      "valor_atraso": 1220.37,
+      "faixa": "formal",
+      "num_parcelas": 4,
+      "vencimento_mais_antigo": "05/11/2025",
+      "telefone": "(27) 9665-0101"
+    },
+    {
+      "id": "00297154230",
+      "nome": "YURI DA FONSECA GARCIA",
+      "dias_atraso": 102,
+      "valor_atraso": 1200,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "27/10/2025",
+      "telefone": null
+    },
+    {
+      "id": "15265540000174",
+      "nome": "P. DE L. REZENDE FIRE",
+      "dias_atraso": 32,
+      "valor_atraso": 1070,
+      "faixa": "administrative",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "05/01/2026",
+      "telefone": "(27) 99720-3956"
+    },
+    {
+      "id": "20165298000105",
+      "nome": "DAMYLLE BUENO",
+      "dias_atraso": 130,
+      "valor_atraso": 1040,
+      "faixa": "formal",
+      "num_parcelas": 8,
+      "vencimento_mais_antigo": "29/09/2025",
+      "telefone": "(27) 99237-4937"
+    },
+    {
+      "id": "17304757000171",
+      "nome": "POKE BEACH",
+      "dias_atraso": 273,
+      "valor_atraso": 990,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "09/05/2025",
+      "telefone": "(27) 9643-6330"
+    },
+    {
+      "id": "01533445710",
+      "nome": "JOSENIL LOPES MATIAS",
+      "dias_atraso": 124,
+      "valor_atraso": 950,
+      "faixa": "formal",
+      "num_parcelas": 5,
+      "vencimento_mais_antigo": "05/10/2025",
+      "telefone": null
+    },
+    {
+      "id": "45421319000129",
+      "nome": "EMBALA FILM",
+      "dias_atraso": 1,
+      "valor_atraso": 872,
+      "faixa": "formal",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "05/02/2026",
+      "telefone": "(22) 99229-9431"
+    },
+    {
+      "id": "37671544000195",
+      "nome": "PRESENTINHOS DA JU",
+      "dias_atraso": 143,
+      "valor_atraso": 840,
+      "faixa": "formal",
+      "num_parcelas": 5,
+      "vencimento_mais_antigo": "16/09/2025",
+      "telefone": "(27) 99969-7991"
+    },
+    {
+      "id": "17032290000158",
+      "nome": "ANDRE A. D. MENDES",
+      "dias_atraso": 144,
+      "valor_atraso": 835,
+      "faixa": "formal",
+      "num_parcelas": 5,
+      "vencimento_mais_antigo": "15/09/2025",
+      "telefone": "(27) 99989-4189"
+    },
+    {
+      "id": "33312073000178",
+      "nome": "MAGNO DE SOUZA CARDOSO",
+      "dias_atraso": 27,
+      "valor_atraso": 820,
+      "faixa": "friendly",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "10/01/2026",
+      "telefone": "(27) 9916-3620"
+    },
+    {
+      "id": "12544347000184",
+      "nome": "FABIANO DOS SANTOS",
+      "dias_atraso": 123,
+      "valor_atraso": 812.5,
+      "faixa": "formal",
+      "num_parcelas": 3,
+      "vencimento_mais_antigo": "06/10/2025",
+      "telefone": "(27) 99644-2869"
+    },
+    {
+      "id": "18837629000156",
+      "nome": "STEPHANIE CRISITNE PAULO DA SILVA",
+      "dias_atraso": 169,
+      "valor_atraso": 800,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "21/08/2025",
+      "telefone": "(27) 9850-0886"
+    },
+    {
+      "id": "34319324000109",
+      "nome": "ORTO KIDS CONSULTORIO DENTARIO",
+      "dias_atraso": 48,
+      "valor_atraso": 800,
+      "faixa": "administrative",
+      "num_parcelas": 3,
+      "vencimento_mais_antigo": "20/12/2025",
+      "telefone": "(27) 8831-3192"
+    },
+    {
+      "id": "46785359000112",
+      "nome": "BAKY COMPANY LTDA",
+      "dias_atraso": 7,
+      "valor_atraso": 800,
+      "faixa": "friendly",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "30/01/2026",
+      "telefone": "(27) 99508-9620"
+    },
+    {
+      "id": "34286349000153",
+      "nome": "CABANA PUBLICIDADE LTDA",
+      "dias_atraso": 74,
+      "valor_atraso": 765,
+      "faixa": "formal",
+      "num_parcelas": 3,
+      "vencimento_mais_antigo": "24/11/2025",
+      "telefone": "(27) 99929-5580"
+    },
+    {
+      "id": "08208384000497",
+      "nome": "CENTER CARGO MANAUS TRANSPORTES INTERNACIONAIS LTDA",
+      "dias_atraso": 1,
+      "valor_atraso": 765,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/02/2026",
+      "telefone": "(92) 3346-6055"
+    },
+    {
+      "id": "63380181000149",
+      "nome": "SMART MOXUARA COMERCIO DE ELETRONICOS LTDA",
+      "dias_atraso": 63,
+      "valor_atraso": 760,
+      "faixa": "formal",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "05/12/2025",
+      "telefone": "(47) 9783-8571"
+    },
+    {
+      "id": "01991394000150",
+      "nome": "A.C. XAVIER ME",
+      "dias_atraso": 79,
+      "valor_atraso": 750,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "19/11/2025",
+      "telefone": "(27) 3225-0933"
+    },
+    {
+      "id": "56283160000140",
+      "nome": "ADVENTO MIDIA GROUP",
+      "dias_atraso": 63,
+      "valor_atraso": 750,
+      "faixa": "formal",
+      "num_parcelas": 3,
+      "vencimento_mais_antigo": "05/12/2025",
+      "telefone": "(11) 99886-6338"
+    },
+    {
+      "id": "48011358000146",
+      "nome": "LOURENZINI NEGOCIOS IMOBILIARIOS",
+      "dias_atraso": 93,
+      "valor_atraso": 680,
+      "faixa": "formal",
+      "num_parcelas": 4,
+      "vencimento_mais_antigo": "05/11/2025",
+      "telefone": "(27) 99729-4979"
+    },
+    {
+      "id": "45729104000170",
+      "nome": "CRECHE DA LARI LTDA",
+      "dias_atraso": 32,
+      "valor_atraso": 660,
+      "faixa": "administrative",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "05/01/2026",
+      "telefone": "(27) 98886-6893"
+    },
+    {
+      "id": "20292000000110",
+      "nome": "TS BAETA COMERCIAL",
+      "dias_atraso": 68,
+      "valor_atraso": 645,
+      "faixa": "formal",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "30/11/2025",
+      "telefone": "(27) 3114-0796"
+    },
+    {
+      "id": "13731806000100",
+      "nome": "AUTO-SERVICO E DISTRIBUIDORA RAMOS",
+      "dias_atraso": 68,
+      "valor_atraso": 630,
+      "faixa": "formal",
+      "num_parcelas": 4,
+      "vencimento_mais_antigo": "30/11/2025",
+      "telefone": "(27) 99695-0502"
+    },
+    {
+      "id": "51721399000130",
+      "nome": "PROELITE ELETRONICOS",
+      "dias_atraso": 68,
+      "valor_atraso": 620,
+      "faixa": "formal",
+      "num_parcelas": 3,
+      "vencimento_mais_antigo": "30/11/2025",
+      "telefone": "(27) 8804-6066"
+    },
+    {
+      "id": "04648345000107",
+      "nome": "ARENA CONSULTORIA",
+      "dias_atraso": 86,
+      "valor_atraso": 600.94,
+      "faixa": "formal",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "12/11/2025",
+      "telefone": "(27) 8828-6605"
+    },
+    {
+      "id": "36406667000136",
+      "nome": "CLEITON DA CONCEIÇÃO RIBEIRO",
+      "dias_atraso": 144,
+      "valor_atraso": 600,
+      "faixa": "formal",
+      "num_parcelas": 4,
+      "vencimento_mais_antigo": "15/09/2025",
+      "telefone": "(27) 9794-4392"
+    },
+    {
+      "id": "52521290000112",
+      "nome": "LEDO ENGENHARIA",
+      "dias_atraso": 93,
+      "valor_atraso": 600,
+      "faixa": "formal",
+      "num_parcelas": 5,
+      "vencimento_mais_antigo": "05/11/2025",
+      "telefone": "(27) 98131-1528"
+    },
+    {
+      "id": "11865637000167",
+      "nome": "SARA CASSIM RODRIGUES JACONE 11998183726",
+      "dias_atraso": 129,
+      "valor_atraso": 585,
+      "faixa": "formal",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "30/09/2025",
+      "telefone": "(27) 8885-0314"
+    },
+    {
+      "id": "10262312000127",
+      "nome": "HERCULES DA ROSA",
+      "dias_atraso": 11,
+      "valor_atraso": 555.01,
+      "faixa": "friendly",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "26/01/2026",
+      "telefone": "(27) 99998-6769"
+    },
+    {
+      "id": "23924675000122",
+      "nome": "L & L COMERCIO DE PRODUTOS INDUSTRIAIS",
+      "dias_atraso": 68,
+      "valor_atraso": 540,
+      "faixa": "formal",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "30/11/2025",
+      "telefone": "(27) 9961-8446"
+    },
+    {
+      "id": "62316671000113",
+      "nome": "FIRE ENGENHARIA LTDA",
+      "dias_atraso": 32,
+      "valor_atraso": 540,
+      "faixa": "administrative",
+      "num_parcelas": 3,
+      "vencimento_mais_antigo": "05/01/2026",
+      "telefone": "(27) 99720-3956"
+    },
+    {
+      "id": "30032586000137",
+      "nome": "MARIANA BIZZI CARVALHO DE MELLO NUNES",
+      "dias_atraso": 63,
+      "valor_atraso": 500,
+      "faixa": "formal",
+      "num_parcelas": 3,
+      "vencimento_mais_antigo": "05/12/2025",
+      "telefone": "(27) 9232-1660"
+    },
+    {
+      "id": "48756686000171",
+      "nome": "M R LOPES GOMES NEGOCIOS",
+      "dias_atraso": 32,
+      "valor_atraso": 460,
+      "faixa": "administrative",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/01/2026",
+      "telefone": "(27) 9831-9666"
+    },
+    {
+      "id": "60613154000180",
+      "nome": "AONI IMOVEIS SERRA LTDA",
+      "dias_atraso": 77,
+      "valor_atraso": 450,
+      "faixa": "formal",
+      "num_parcelas": 3,
+      "vencimento_mais_antigo": "21/11/2025",
+      "telefone": "(27) 99831-9666"
+    },
+    {
+      "id": "57433634000155",
+      "nome": "DGA MIDIA",
+      "dias_atraso": 53,
+      "valor_atraso": 430,
+      "faixa": "administrative",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "15/12/2025",
+      "telefone": "(27) 99831-9666"
+    },
+    {
+      "id": "18379898000116",
+      "nome": "ANDRE VIEIRA DA S ENDLICH (DRONETECH)",
+      "dias_atraso": 1,
+      "valor_atraso": 427.16,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/02/2026",
+      "telefone": "(27) 99918-8249"
+    },
+    {
+      "id": "45936261000156",
+      "nome": "R F RODRIGUES",
+      "dias_atraso": 3,
+      "valor_atraso": 420,
+      "faixa": "formal",
+      "num_parcelas": 3,
+      "vencimento_mais_antigo": "03/02/2026",
+      "telefone": "(27) 9237-9680"
+    },
+    {
+      "id": "02518809000135",
+      "nome": "JAIR ALVES RUFINO ME",
+      "dias_atraso": 68,
+      "valor_atraso": 390,
+      "faixa": "formal",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "30/11/2025",
+      "telefone": "(27) 3239-3352"
+    },
+    {
+      "id": "21992413000170",
+      "nome": "Praia do Futuro Negócios Imobiliários",
+      "dias_atraso": 93,
+      "valor_atraso": 387.5,
+      "faixa": "formal",
+      "num_parcelas": 3,
+      "vencimento_mais_antigo": "05/11/2025",
+      "telefone": "(27) 8814-4560"
+    },
+    {
+      "id": "63380102000108",
+      "nome": "SMART PRAIA DA COSTA COMERCIO DE ELETRONICOS LTDA",
+      "dias_atraso": 1,
+      "valor_atraso": 380,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/02/2026",
+      "telefone": "(21) 98442-0905"
+    },
+    {
+      "id": "50920850000186",
+      "nome": "RL NUNES REPRESENTACAO",
+      "dias_atraso": 1,
+      "valor_atraso": 370,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/02/2026",
+      "telefone": "(21) 96599-0243"
+    },
+    {
+      "id": "50850308000102",
+      "nome": "MOVE SERVIÇOS",
+      "dias_atraso": 1,
+      "valor_atraso": 345,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/02/2026",
+      "telefone": "3510244948"
+    },
+    {
+      "id": "40006818000136",
+      "nome": "FL NEGOCIOS IMOBILIARIOS",
+      "dias_atraso": 1,
+      "valor_atraso": 341.73,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/02/2026",
+      "telefone": "(27) 9975-7175"
+    },
+    {
+      "id": "57500363753",
+      "nome": "Caus e Correa participações LTDA",
+      "dias_atraso": 50,
+      "valor_atraso": 325,
+      "faixa": "administrative",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "18/12/2025",
+      "telefone": null
+    },
+    {
+      "id": "27790998000121",
+      "nome": "EG MEIRELES",
+      "dias_atraso": 22,
+      "valor_atraso": 320.02,
+      "faixa": "friendly",
+      "num_parcelas": 3,
+      "vencimento_mais_antigo": "15/01/2026",
+      "telefone": "(27) 99932-1408"
+    },
+    {
+      "id": "25111429000187",
+      "nome": "IEMA",
+      "dias_atraso": 1,
+      "valor_atraso": 320,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/02/2026",
+      "telefone": "(27) 9765-6631"
+    },
+    {
+      "id": "25137111000175",
+      "nome": "JOHNNY EFFGEN",
+      "dias_atraso": 68,
+      "valor_atraso": 300,
+      "faixa": "formal",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "30/11/2025",
+      "telefone": "(27) 99719-0701"
+    },
+    {
+      "id": "30216708000145",
+      "nome": "WILLCAFE",
+      "dias_atraso": 32,
+      "valor_atraso": 300,
+      "faixa": "administrative",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "05/01/2026",
+      "telefone": "(27) 3339-8150/ (27) 9941-3490"
+    },
+    {
+      "id": "21543593000102",
+      "nome": "RANGEL CONSULTORIA",
+      "dias_atraso": 22,
+      "valor_atraso": 300,
+      "faixa": "friendly",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "15/01/2026",
+      "telefone": "(27) 9825-5633"
+    },
+    {
+      "id": "61982284000153",
+      "nome": "MSENA SOLUÇOES IMOBILIARIAS LTDA",
+      "dias_atraso": 1,
+      "valor_atraso": 300,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/02/2026",
+      "telefone": "(27) 98155-2425"
+    },
+    {
+      "id": "27949773000256",
+      "nome": "AONI IMOVEIS FILIAL 0002",
+      "dias_atraso": 68,
+      "valor_atraso": 292.5,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "30/11/2025",
+      "telefone": "(27) 99831-9666"
+    },
+    {
+      "id": "46220148000132",
+      "nome": "JU AGUIAR ESTETICA E BELEZA ACADEMY",
+      "dias_atraso": 163,
+      "valor_atraso": 249.28,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "27/08/2025",
+      "telefone": "(27) 9649-2665"
+    },
+    {
+      "id": "11384180000179",
+      "nome": "COMERCIAL PIACHE",
+      "dias_atraso": 1,
+      "valor_atraso": 245.19,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/02/2026",
+      "telefone": "(28) 99904-5217"
+    },
+    {
+      "id": "27939241000157",
+      "nome": "JOSE SIMOES DE GUSMAO",
+      "dias_atraso": 175,
+      "valor_atraso": 240,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "15/08/2025",
+      "telefone": "(27) 93924-1000"
+    },
+    {
+      "id": "03817760000184",
+      "nome": "BECORATE",
+      "dias_atraso": 24,
+      "valor_atraso": 220,
+      "faixa": "friendly",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "13/01/2026",
+      "telefone": "(27) 99740-9144"
+    },
+    {
+      "id": "20347171000107",
+      "nome": "RR LOPES COMERCIO",
+      "dias_atraso": 74,
+      "valor_atraso": 210,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "24/11/2025",
+      "telefone": "(27) 3219-2300"
+    },
+    {
+      "id": "26332653000161",
+      "nome": "Ars Construcoes Ltda",
+      "dias_atraso": 59,
+      "valor_atraso": 210,
+      "faixa": "administrative",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "09/12/2025",
+      "telefone": "(27) 99289-4328"
+    },
+    {
+      "id": "11009553000121",
+      "nome": "ALH CONSTRUCOES & REPARACOES",
+      "dias_atraso": 2,
+      "valor_atraso": 210,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "04/02/2026",
+      "telefone": "(27) 98873-3190"
+    },
+    {
+      "id": "62946432000147",
+      "nome": "AURELIO LABORATORIO DENTAL LTDA",
+      "dias_atraso": 1,
+      "valor_atraso": 200,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/02/2026",
+      "telefone": "(27) 99614-1942"
+    },
+    {
+      "id": "05516759000145",
+      "nome": "MARCOS BELMONTE SERVICOS LTDA",
+      "dias_atraso": 1,
+      "valor_atraso": 200,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/02/2026",
+      "telefone": "(27) 99713-5475"
+    },
+    {
+      "id": "32907407000193",
+      "nome": "MARCUS VINICIOS FURRIGO BELMONTE LTDA",
+      "dias_atraso": 1,
+      "valor_atraso": 200,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/02/2026",
+      "telefone": "(27) 9254-3685"
+    },
+    {
+      "id": "47986610000170",
+      "nome": "BREMENKAMP SOLUCOES INTEGRADAS",
+      "dias_atraso": 68,
+      "valor_atraso": 190,
+      "faixa": "formal",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "30/11/2025",
+      "telefone": "(27) 9699-4701"
+    },
+    {
+      "id": "43596179000102",
+      "nome": "RAIBOLT NEGOCIOS IMOBILIARIOS",
+      "dias_atraso": 1,
+      "valor_atraso": 190,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/02/2026",
+      "telefone": "(27) 99278-7090"
+    },
+    {
+      "id": "16926555000107",
+      "nome": "VITORIA CENTER",
+      "dias_atraso": 93,
+      "valor_atraso": 175,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/11/2025",
+      "telefone": "(27) 99506-6780"
+    },
+    {
+      "id": "30359313000100",
+      "nome": "ELI RUELA",
+      "dias_atraso": 48,
+      "valor_atraso": 165,
+      "faixa": "administrative",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "20/12/2025",
+      "telefone": "2796469500"
+    },
+    {
+      "id": "32478901000180",
+      "nome": "SINDICATO ESTADUAL",
+      "dias_atraso": 1,
+      "valor_atraso": 165,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/02/2026",
+      "telefone": "(27) 98141-2813"
+    },
+    {
+      "id": "33121908000374",
+      "nome": "INFOTEC - FILIAL 0003",
+      "dias_atraso": 68,
+      "valor_atraso": 160,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "30/11/2025",
+      "telefone": "(21) 96945-9484"
+    },
+    {
+      "id": "50178358000187",
+      "nome": "IGF DIAGNOSTICA",
+      "dias_atraso": 1,
+      "valor_atraso": 160,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "05/02/2026",
+      "telefone": "(27) 99724-9398"
+    },
+    {
+      "id": "59763153000133",
+      "nome": "SGOSILVA LTDA",
+      "dias_atraso": 68,
+      "valor_atraso": 150,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "30/11/2025",
+      "telefone": "(27) 9802-4273"
+    },
+    {
+      "id": "08979662000167",
+      "nome": "VALOR ESPIRITO SANTO LANCAMENTOS IMOBILIARIOS LTDA",
+      "dias_atraso": 53,
+      "valor_atraso": 150,
+      "faixa": "administrative",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "15/12/2025",
+      "telefone": "(11) 4195-7100"
+    },
+    {
+      "id": "58257052000128",
+      "nome": "INVICTA CORRETORA EM PLANOS DE SAUDE E ODONTOLOGICOS LTDA",
+      "dias_atraso": 19,
+      "valor_atraso": 150,
+      "faixa": "friendly",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "18/01/2026",
+      "telefone": "(27) 98849-2387"
+    },
+    {
+      "id": "39994726000122",
+      "nome": "AHAS PRODUCOES E EVENTOS",
+      "dias_atraso": 83,
+      "valor_atraso": 140,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "15/11/2025",
+      "telefone": "(61) 9246-1717"
+    },
+    {
+      "id": "39978984000115",
+      "nome": "Francielle Matias  Martins da Silva",
+      "dias_atraso": 68,
+      "valor_atraso": 135,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "30/11/2025",
+      "telefone": "(27) 98191-4151"
+    },
+    {
+      "id": "30061778000171",
+      "nome": "INOVETECH - ENGENHARIA E INOVACAO LTDA",
+      "dias_atraso": 68,
+      "valor_atraso": 135,
+      "faixa": "formal",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "30/11/2025",
+      "telefone": "(27) 9749-9197"
+    },
+    {
+      "id": "12741221000108",
+      "nome": "EUZENI BARBOSA DUTRA",
+      "dias_atraso": 68,
+      "valor_atraso": 130,
+      "faixa": "formal",
+      "num_parcelas": 2,
+      "vencimento_mais_antigo": "30/11/2025",
+      "telefone": "(27) 3239-3352"
+    },
+    {
+      "id": "01994546719",
+      "nome": "JOSELIA",
+      "dias_atraso": 123,
+      "valor_atraso": 100,
+      "faixa": "formal",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "06/10/2025",
+      "telefone": null
+    },
+    {
+      "id": "62231438000138",
+      "nome": "AUTOPIXX SOLUÇÕES AUTOMOTIVAS LTDA",
+      "dias_atraso": 21,
+      "valor_atraso": 100,
+      "faixa": "friendly",
+      "num_parcelas": 1,
+      "vencimento_mais_antigo": "16/01/2026",
+      "telefone": "(27) 99570-7887"
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+ALTER TABLE `whatsappAudit` MODIFY COLUMN `correlationId` varchar(100);--> statement-breakpoint
+ALTER TABLE `whatsappAudit` MODIFY COLUMN `providerTrackingMode` enum('WITH_ID','ACK_ONLY','NO_ID_ACK','WEBHOOK') NOT NULL DEFAULT 'WITH_ID';

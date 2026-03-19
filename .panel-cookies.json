@@ -1,0 +1,38 @@
+{
+  "cookies": [
+    {
+      "name": "ca-access-token-expiry",
+      "value": "1771844253000",
+      "domain": ".contaazul.com",
+      "path": "/",
+      "secure": true,
+      "httpOnly": false
+    },
+    {
+      "name": "ca-websocket-auth",
+      "value": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzbWJEYXRhIjp7InRlbmFudElkIjoxMDY2OTk1LCJ1c2VySWQiOiI1NTYzMjYwMiJ9LCJhY2NEYXRhIjp7fSwiaWF0IjoxNzcxNzU4Mzg4LCJleHAiOjE3NzE4NDQ3ODgsImF1ZCI6Imh0dHA6Ly93ZWJzb2NrZXQuY29udGFhenVsLmNvbS8iLCJpc3MiOiJDb250YUF6dWwiLCJzdWIiOiJmcmFnYWNvbnRhYmlsQGdtYWlsLmNvbSJ9.ktM89KvUJ34gDx4Tvhzqe8dhZcuivBxGAnNwJITPcTZbFF1r6QfJMFuMvm0mKeHP3QWwUlM5maDnNt9Wwl8v8ec9Vm2ZFM9Bv93e4B3pfWk3n53fMMk97cFShTkVdcpnBXfbVnyIV1QDZr2Uh-2zv26VH2QGNnvopSm5K6NEVXzP-KWnSBSFFlAUqhaOad1kH5s0g2zWm5BsMGEQC55nDjX4jxjRzf95PY8RsoO5GWdCe0VsVMiEJZHrba1OdrN1jr_9GOavysP5Oku3eOkJUrzdlDMW1tEaAUJ1tCKGkx2JtgW8kL2kncqSUbiGtdlU3SNgfm-_ZgkBCugiIi8_Gg",
+      "domain": ".contaazul.com",
+      "path": "/",
+      "secure": true,
+      "httpOnly": false
+    },
+    {
+      "name": "ajs_anonymous_id",
+      "value": "a26b801e-e3df-453c-bb49-e24f6ad6dac4",
+      "domain": ".contaazul.com",
+      "path": "/",
+      "secure": false,
+      "httpOnly": false
+    },
+    {
+      "name": "ajs_group_id",
+      "value": "1066995",
+      "domain": ".contaazul.com",
+      "path": "/",
+      "secure": false,
+      "httpOnly": false
+    }
+  ],
+  "timestamp": 1771776221000,
+  "expiresAt": 1771779821000
+}

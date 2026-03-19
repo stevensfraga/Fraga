@@ -1,0 +1,210 @@
+import { Router } from "express";
+import mysql from "mysql2/promise";
+import axios from "axios";
+import {
+  getNextQuestion,
+  normalizePhoneNumber,
+  identifyClientWithFallback,
+  logClientIdentification,
+} from "../services/clientIdentificationService";
+
+const ZAP_API_URL = process.env.ZAP_CONTABIL_API_URL || "https://api-fraga.zapcontabil.chat";
+const ZAP_API_KEY = process.env.ZAP_CONTABIL_API_KEY || process.env.WHATSAPP_API_KEY || "";
+
+async function sendWhatsappMessage(phone: string, message: string) {
+  if (!ZAP_API_KEY) {
+    console.warn(`[NFSE-MESSAGE-WHATSAPP] ⚠️ ZAP_CONTABIL_API_KEY não configurada`);
+    return false;
+  }
+  try {
+    const phoneDigits = phone.replace(/\D/g, "");
+    console.log(`[NFSE-MESSAGE-WHATSAPP] 📤 Enviando para ${phoneDigits}: ${message.substring(0, 80)}...`);
+    const response = await axios.post(
+      `${ZAP_API_URL}/api/send/${phoneDigits}`,
+      { body: message, connectionFrom: 0 },
+      {
+        headers: {
+          Authorization: `Bearer ${ZAP_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 15000,
+      }
+    );
+    const messageId = response.data?.message?.id || response.data?.messageId || response.data?.id;
+    console.log(`[NFSE-MESSAGE-WHATSAPP] ✅ Enviada (ID: ${messageId})`);
+    return true;
+  } catch (error: any) {
+    console.error(`[NFSE-MESSAGE-WHATSAPP] ❌ Erro: ${error.message}`);
+    return false;
+  }
+}
+
+const router = Router();
+
+router.post("/setor-nota-fiscal", async (req, res) => {
+  console.log("[NFSE-WEBHOOK-DEBUG] 🔔 WEBHOOK CHAMADO - setor-nota-fiscal");
+  console.log("[NFSE-WEBHOOK-DEBUG] 📦 PAYLOAD RAW:", JSON.stringify(req.body, null, 2));
+
+  let connection: mysql.Connection | null = null;
+  const requestId = `nfse-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+  try {
+    // ─────────────────────────────────────────────────────────────────────────
+    // Suporte ao payload real do ZapContábil:
+    // { "data": { "action": "create|update", "payload": { ... } } }
+    // E também ao formato legado (campos diretos no body).
+    // ─────────────────────────────────────────────────────────────────────────
+    const payload = req.body?.data?.payload || req.body;
+
+    const sector       = payload.queue?.name || payload.ticket?.queue?.name || payload.sector;
+    const ticketId     = payload.id || payload.ticket?.id || payload.ticketId;
+    const phoneE164    = payload.ticket?.contact?.number || payload.contact?.number || payload.phoneE164;
+    const clientName   = payload.ticket?.contact?.name  || payload.contact?.name   || payload.clientName || "Cliente";
+    const clientDocument = payload.clientDocument || null;
+    const previousSector = payload.previousSector || null;
+    const description    = payload.description    || null;
+    const subject        = payload.subject        || null;
+    const fromMe         = payload.fromMe         || false;
+
+    console.log(`[NFSE-WEBHOOK] ✅ WEBHOOK RECEBIDO`);
+    console.log(`[NFSE-WEBHOOK] ticketId: ${ticketId}, setor: ${sector}, phone: ${phoneE164}, fromMe: ${fromMe}`);
+
+    // Ignorar mensagens enviadas pelo próprio sistema
+    if (fromMe === true) {
+      console.log(`[NFSE-WEBHOOK] ⏭️ Ignorando mensagem fromMe: true`);
+      return res.status(200).json({ success: false, reason: "fromMe ignorado" });
+    }
+
+    // Verificar se o setor é "Nota fiscal" (case insensitive, suporta variações)
+    if (!sector || !sector.toLowerCase().includes("nota fiscal")) {
+      console.log(`[NFSE-WEBHOOK] ❌ Setor inválido: ${sector}`);
+      return res.status(200).json({ success: false, reason: "Setor diferente de Nota Fiscal" });
+    }
+
+    if (!phoneE164) {
+      console.log(`[NFSE-WEBHOOK] ❌ Telefone não encontrado no payload`);
+      return res.status(200).json({ success: false, reason: "Telefone não encontrado" });
+    }
+
+    console.log(`[NFSE-WEBHOOK] ✅ SETOR NOTA FISCAL DETECTADO! Iniciando fluxo NFS-e...`);
+
+    const DATABASE_URL = process.env.DATABASE_URL || "";
+    connection = await mysql.createConnection(DATABASE_URL);
+    console.log(`[NFSE-WEBHOOK] ✅ Banco conectado`);
+
+    const phoneNormalized = normalizePhoneNumber(phoneE164);
+    const clientIdentification = await identifyClientWithFallback(
+      phoneNormalized || phoneE164,
+      clientDocument,
+      clientName
+    );
+
+    const [existingTickets] = await connection.execute(
+      "SELECT id FROM zapcontabil_tickets WHERE ticket_id = ? LIMIT 1",
+      [ticketId]
+    );
+
+    let ticketId_db: number;
+
+    if ((existingTickets as any).length === 0) {
+      const [insertResult] = await connection.execute(
+        `INSERT INTO zapcontabil_tickets (
+          ticket_id, phone_e164, client_name, client_document,
+          current_sector, previous_sector, subject, description,
+          status, webhook_payload, created_at, updated_at, flow_state
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?)`,
+        [
+          ticketId       || null,
+          phoneE164      || null,
+          clientName     || null,
+          clientDocument || null,
+          sector         || null,
+          previousSector || null,
+          subject        || null,
+          description    || null,
+          "confirmation_pending",
+          JSON.stringify(req.body),
+          "waiting_confirmation",
+        ]
+      );
+      ticketId_db = (insertResult as any).insertId;
+      console.log(`[NFSE-WEBHOOK] ✅ Ticket criado: ${ticketId_db}`);
+
+      if (clientIdentification.success && clientIdentification.companyId) {
+        await connection.execute(
+          `UPDATE zapcontabil_tickets SET
+            emitter_company_id = ?,
+            emitter_cnpj = ?,
+            identification_method = ?,
+            identification_confidence = ?
+          WHERE id = ?`,
+          [
+            clientIdentification.companyId,
+            clientIdentification.cnpj,
+            clientIdentification.identificationMethod,
+            clientIdentification.confidence,
+            ticketId_db,
+          ]
+        );
+      }
+    } else {
+      ticketId_db = (existingTickets as any)[0].id;
+      console.log(`[NFSE-WEBHOOK] 🔄 Ticket atualizado: ${ticketId_db}`);
+      await connection.execute(
+        `UPDATE zapcontabil_tickets SET
+          current_sector = ?,
+          previous_sector = ?,
+          description = ?,
+          webhook_payload = ?,
+          status = ?,
+          flow_state = ?,
+          last_webhook_at = NOW(),
+          updated_at = NOW()
+        WHERE id = ?`,
+        [
+          sector         || null,
+          previousSector || null,
+          description    || null,
+          JSON.stringify(req.body),
+          "confirmation_pending",
+          "waiting_confirmation",
+          ticketId_db,
+        ]
+      );
+    }
+
+    console.log(`[NFSE-WEBHOOK] 💬 Enviando pergunta de confirmação para ${phoneE164}`);
+    const confirmationMessage = `Olá ${clientName}! 👋\n\nDeseja emitir uma Nota Fiscal de Serviço (NFS-e)?\n\nResponda: *SIM* para continuar`;
+    console.log(`[NFSE-WEBHOOK] ❓ Mensagem: ${confirmationMessage}`);
+    await sendWhatsappMessage(phoneE164, confirmationMessage);
+
+    await connection.end();
+    console.log(`[NFSE-WEBHOOK] ✅ SUCESSO - requestId: ${requestId}`);
+
+    return res.status(200).json({
+      success: true,
+      message: "Pergunta de confirmação enviada",
+      ticketId: ticketId_db,
+      state: "waiting_confirmation",
+      requestId,
+    });
+  } catch (error: any) {
+    console.error(`[NFSE-WEBHOOK] ❌ ERRO: ${error.message}`);
+    console.error(`[NFSE-WEBHOOK] Stack:`, error.stack);
+    if (connection) await connection.end().catch(() => {});
+    return res.status(500).json({ success: false, error: error.message, requestId });
+  }
+});
+
+// Alias para compatibilidade: sator-nota-fiscal (erro de digitação comum)
+router.post("/sator-nota-fiscal", async (req, res) => {
+  console.log("[NFSE-WEBHOOK] ⚠️ AVISO: Usando rota /sator-nota-fiscal (deveria ser /setor-nota-fiscal)");
+  const handlers = router.stack.filter((r: any) => r.route?.path === "/setor-nota-fiscal");
+  if (handlers.length > 0) {
+    return handlers[0].route.stack[0].handle(req, res);
+  }
+  return res.status(500).json({ error: "Handler não encontrado" });
+});
+
+export const zapcontabilWebhookNfseRouter = router;
+export default router;

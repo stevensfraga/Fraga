@@ -1,0 +1,111 @@
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import NotFound from "@/pages/NotFound";
+import { Route, Switch } from "wouter";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { ThemeProvider } from "./contexts/ThemeContext";
+import UnifiedDashboard from "./pages/UnifiedDashboard";
+import CollectionCanvas from "./pages/CollectionCanvas";
+import ClientHistory from "./pages/ClientHistory";
+import BulkSendMessages from "./pages/BulkSendMessages";
+import CollectionPerformance from "./pages/CollectionPerformance";
+import AlertSettings from "./pages/AlertSettings";
+import PerformanceDashboard from "./pages/PerformanceDashboard";
+import ContaAzulIntegration from "./pages/ContaAzulIntegration";
+import DelinquencyDashboard from "./pages/DelinquencyDashboard";
+import ContaAzulOAuth from "./pages/ContaAzulOAuth";
+import ContaAzulAPITest from "./pages/ContaAzulAPITest";
+import OAuthCallback from "./pages/OAuthCallback";
+import OAuthAuthorization from "./pages/OAuthAuthorization";
+import R7GeradorasCollection from "./pages/R7GeradorasCollection";
+import CollectionAudit from "./pages/CollectionAudit";
+import SystemAudit from "./pages/SystemAudit";
+import FirstBoletoDispatch from "./pages/FirstBoletoDispatch";
+import CollectionDashboard from "./pages/CollectionDashboard";
+import LegalDashboard from "./pages/LegalDashboard";
+import AssistenteIA from "./pages/AssistenteIA";
+import ExecutiveDashboard from "./pages/ExecutiveDashboard";
+import ClienteDossie from "./pages/ClienteDossie";
+import ClientsManager from "./pages/ClientsManager";
+import ReguaPipeline from "./pages/ReguaPipeline";
+import PaymentsDivergences from "./pages/PaymentsDivergences";
+import PricingDashboard from "./pages/PricingDashboard";
+import NfseDashboard from "./pages/NfseDashboard";
+import NfseConfig from "./pages/NfseConfig";
+import ContaAzulSettings from "./pages/ContaAzulSettings";
+import UsersAdmin from "./pages/UsersAdmin";
+import Certificates from "./pages/Certificates";
+import IntegrationStatusPage from "./pages/IntegrationStatus";
+
+// import FollowUpScheduler from "./pages/FollowUpScheduler";
+// import EffectivenessDashboard from "./pages/EffectivenessDashboard";
+
+function Router() {
+  // make sure to consider if you need authentication for certain routes
+  return (
+    <Switch>
+      <Route path="/" component={ExecutiveDashboard} />
+      <Route path="/legacy" component={UnifiedDashboard} />
+      <Route path="/canvas" component={CollectionCanvas} />
+      <Route path="/client/:id" component={ClientHistory} />
+      <Route path="/bulk-send" component={BulkSendMessages} />
+      <Route path="/performance" component={CollectionPerformance} />
+      <Route path="/metrics" component={PerformanceDashboard} />
+      <Route path="/alerts" component={AlertSettings} />
+      <Route path="/conta-azul" component={ContaAzulIntegration} />
+      <Route path="/conta-azul-oauth" component={ContaAzulOAuth} />
+      <Route path="/conta-azul-api-test" component={ContaAzulAPITest} />
+      <Route path="/oauth/conta-azul/callback" component={OAuthCallback} />
+      <Route path="/oauth" component={OAuthAuthorization} />
+      <Route path="/r7-cobranca" component={R7GeradorasCollection} />
+      <Route path="/audit" component={CollectionAudit} />
+      <Route path="/system-audit" component={SystemAudit} />
+      <Route path="/first-boleto" component={FirstBoletoDispatch} />
+      <Route path="/collection-metrics" component={CollectionDashboard} />
+      <Route path="/delinquency" component={DelinquencyDashboard} />
+      <Route path="/juridico" component={LegalDashboard} />
+      <Route path="/assistente-ia" component={AssistenteIA} />
+      <Route path="/dashboard2" component={ExecutiveDashboard} />
+      <Route path="/cliente/:id" component={ClienteDossie} />
+      <Route path="/clientes" component={ClientsManager} />
+      <Route path="/regua-pipeline" component={ReguaPipeline} />
+      <Route path="/pagamentos" component={PaymentsDivergences} />
+      <Route path="/honorarios" component={PricingDashboard} />
+      <Route path="/nfse" component={NfseDashboard} />
+      <Route path="/nfse-config" component={NfseConfig} />
+      <Route path="/conta-azul-settings" component={ContaAzulSettings} />
+      <Route path="/usuarios" component={UsersAdmin} />
+      <Route path="/certificados" component={Certificates} />
+      <Route path="/integracoes-fiscais" component={IntegrationStatusPage} />
+
+      {/* <Route path="/follow-ups" component={FollowUpScheduler} /> */}
+      {/* <Route path="/effectiveness" component={EffectivenessDashboard} /> */}
+      <Route path="/404" component={NotFound} />
+      {/* Final fallback route */}
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+// NOTE: About Theme
+// - First choose a default theme according to your design style (dark or light bg), than change color palette in index.css
+//   to keep consistent foreground/background color across components
+// - If you want to make theme switchable, pass `switchable` ThemeProvider and use `useTheme` hook
+
+function App() {
+  return (
+    <ErrorBoundary>
+      <ThemeProvider
+        defaultTheme="light"
+        // switchable
+      >
+        <TooltipProvider>
+          <Toaster />
+          <Router />
+        </TooltipProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
+  );
+}
+
+export default App;

@@ -1,0 +1,80 @@
+    // ========================================
+    // PASSO 5: Enviar WhatsApp via ZapContábil
+    // ========================================
+    log(`STEP_5: Sending WhatsApp via ZapContábil...`);
+    let whatsappMessageId: string | null = null;
+    let whatsappStatus: string = 'pending';
+    let phoneNumber: string | null = null;
+    let messageContent: string | null = null;
+    
+    try {
+      phoneNumber = client.phoneCellular || client.phone;
+      if (!phoneNumber) {
+        throw new Error('No phone number found for client');
+      }
+
+      const amountValue = parseFloat(selectedReceivable.amount);
+      const amountInReais = amountValue > 100 ? (amountValue / 100).toFixed(2) : amountValue.toFixed(2);
+
+      const dueDate = new Date(selectedReceivable.dueDate);
+      const dueDateFormatted = dueDate.toLocaleDateString('pt-BR');
+
+      messageContent = `Olá, ${client.name}. Segue o boleto referente aos serviços contábeis da Fraga Contabilidade para a ${bootstrapResult.person?.nome}. Valor: R$ ${amountInReais} | Vencimento: ${dueDateFormatted}. Boleto (PDF/Link): ${pdfUrl || 'Link do boleto'}. Posso confirmar o recebimento?`;
+
+      const zapUrl = `${process.env.ZAP_CONTABIL_API_URL}/api/dispatch/send`;
+      const zapResponse = await axios.post(
+        zapUrl,
+        {
+          phone: phoneNumber,
+          message: messageContent,
+          mediaUrl: pdfUrl,
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${process.env.ZAP_CONTABIL_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 15000,
+        }
+      );
+
+      if (!zapResponse.data.success) {
+        throw new Error(`ZapContábil error: ${zapResponse.data.error}`);
+      }
+
+      whatsappMessageId = zapResponse.data.messageId;
+      whatsappStatus = 'sent';
+
+      log(`whatsapp sent: messageId=${whatsappMessageId} phone=${phoneNumber}`);
+    } catch (error: any) {
+      log(`ERRO whatsapp: ${error?.message}`);
+      whatsappStatus = 'failed';
+    }
+
+    // ========================================
+    // PASSO 6: Auditar no banco (INSERT whatsappAudit)
+    // ========================================
+    log(`STEP_6: Auditing to database...`);
+    let auditId: number | null = null;
+    try {
+      const { whatsappAudit } = await import('../drizzle/schema');
+      
+      const auditResult = await db.insert(whatsappAudit).values({
+        clientId,
+        receivableId: selectedReceivable.id,
+        messageId: whatsappMessageId || `msg_${Date.now()}`,
+        sentAt: new Date(),
+        templateUsed: 'precharge-manual',
+        status: whatsappStatus as any,
+        phoneNumber: phoneNumber || null,
+        messageContent: messageContent || null,
+        pdfUrl: pdfUrl || null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      
+      auditId = (auditResult as any).insertId || null;
+      log(`audit inserted: auditId=${auditId} clientId=${clientId} receivableId=${selectedReceivable.id} messageId=${whatsappMessageId} status=${whatsappStatus}`);
+    } catch (error: any) {
+      log(`WARN audit: ${error?.message}`);
+    }

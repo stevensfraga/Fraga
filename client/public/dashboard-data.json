@@ -1,0 +1,297 @@
+{
+  "dre_2024": {
+    "months": [
+      "Jan/2024",
+      "Fev/2024",
+      "Mar/2024",
+      "Abr/2024",
+      "Mai/2024",
+      "Jun/2024",
+      "Jul/2024",
+      "Ago/2024"
+    ],
+    "revenue": [
+      81604.88999999998,
+      87738.17,
+      113001.29999999999,
+      85796.27,
+      78866.37999999999,
+      84072.53,
+      93482.90000000001,
+      82755.53
+    ],
+    "net_profit": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "dre_2025": {
+    "months": [
+      "Jan/2025",
+      "Fev/2025",
+      "Mar/2025",
+      "Abr/2025",
+      "Mai/2025",
+      "Jun/2025",
+      "Jul/2025",
+      "Ago/2025"
+    ],
+    "revenue": [
+      80965.98000000001,
+      106533.95,
+      79937.0,
+      84297.0,
+      214923.41,
+      188406.0,
+      97136.95,
+      135451.46000000002
+    ],
+    "net_profit": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "total_clients": 229,
+  "active_clients": 229,
+  "cnae_distribution": [
+    {
+      "Todas Empresas por CNAE": "Category",
+      "Unnamed: 1": "Quantidade"
+    },
+    {
+      "Todas Empresas por CNAE": "7319-0/02 - Promoção de vendas",
+      "Unnamed: 1": 23
+    },
+    {
+      "Todas Empresas por CNAE": "4751-2/01 - Comércio varejista especializado de equipamentos e suprimentos de informática",
+      "Unnamed: 1": 21
+    },
+    {
+      "Todas Empresas por CNAE": "4753-9/00 - Comércio varejista especializado de eletrodomésticos e equipamentos de áudio e vídeo",
+      "Unnamed: 1": 20
+    },
+    {
+      "Todas Empresas por CNAE": "6821-8/01 - Corretagem na compra e venda e avaliação de imóveis",
+      "Unnamed: 1": 18
+    },
+    {
+      "Todas Empresas por CNAE": "4757-1/00 - Comércio varejista especializado de peças e acessórios para aparelhos eletroeletrônicos para uso doméstico, exceto informática e comunicação",
+      "Unnamed: 1": 15
+    },
+    {
+      "Todas Empresas por CNAE": "4752-1/00 - Comércio varejista especializado de equipamentos de telefonia e comunicação",
+      "Unnamed: 1": 15
+    },
+    {
+      "Todas Empresas por CNAE": "8599-6/99 - Outras atividades de ensino não especificadas anteriormente",
+      "Unnamed: 1": 15
+    },
+    {
+      "Todas Empresas por CNAE": "6821-8/02 - Corretagem no aluguel de imóveis",
+      "Unnamed: 1": 15
+    },
+    {
+      "Todas Empresas por CNAE": "4772-5/00 - Comércio varejista de cosméticos, produtos de perfumaria e de higiene pessoal",
+      "Unnamed: 1": 14
+    }
+  ],
+  "total_overdue": 0.0,
+  "bank_balance": 0.0,
+  "pagamento_data": [
+    {
+      "Categoria": "Total do perÌodo",
+      "Centro de custo": null,
+      "Valor total": 1093134.05,
+      "AV(%)": 100.0,
+      "jan./25": 123684.9,
+      "fev./25": 104464.78,
+      "mar./25": 93731.65,
+      "abr./25": 84726.22,
+      "mai./25": 74406.58,
+      "jun./25": 77336.32,
+      "jul./25": 75993.55,
+      "ago./25": 125500.22,
+      "set./25": 82252.02,
+      "out./25": 70788.58,
+      "nov./25": 69140.44,
+      "dez./25": 111108.79
+    },
+    {
+      "Categoria": "Sal·rios a Pagar",
+      "Centro de custo": "Sem centro de custo",
+      "Valor total": 264022.48,
+      "AV(%)": 24.15,
+      "jan./25": 31120.7,
+      "fev./25": 26944.81,
+      "mar./25": 21364.81,
+      "abr./25": 24006.48,
+      "mai./25": 20099.74,
+      "jun./25": 25621.81,
+      "jul./25": 0.0,
+      "ago./25": 43948.0,
+      "set./25": 18221.24,
+      "out./25": 15952.94,
+      "nov./25": 17127.54,
+      "dez./25": 19614.41
+    },
+    {
+      "Categoria": "Retirada",
+      "Centro de custo": "Sem centro de custo",
+      "Valor total": 157968.74,
+      "AV(%)": 14.45,
+      "jan./25": 11000.0,
+      "fev./25": 11500.0,
+      "mar./25": 10587.0,
+      "abr./25": 11300.0,
+      "mai./25": 10026.0,
+      "jun./25": 10491.82,
+      "jul./25": 12000.0,
+      "ago./25": 16100.0,
+      "set./25": 13000.0,
+      "out./25": 14500.0,
+      "nov./25": 11300.0,
+      "dez./25": 26163.92
+    },
+    {
+      "Categoria": "TransferÍncias entre o mesmo CNPJ",
+      "Centro de custo": "Sem centro de custo",
+      "Valor total": 127587.0,
+      "AV(%)": 11.67,
+      "jan./25": 22300.0,
+      "fev./25": 23800.0,
+      "mar./25": 15887.0,
+      "abr./25": 10900.0,
+      "mai./25": 10500.0,
+      "jun./25": 8000.0,
+      "jul./25": 2500.0,
+      "ago./25": 1000.0,
+      "set./25": 11700.0,
+      "out./25": 1000.0,
+      "nov./25": 0.0,
+      "dez./25": 20000.0
+    },
+    {
+      "Categoria": "LicenÁa ou Aluguel de Softwares",
+      "Centro de custo": "Sem centro de custo",
+      "Valor total": 82407.07,
+      "AV(%)": 7.54,
+      "jan./25": 6574.22,
+      "fev./25": 6318.66,
+      "mar./25": 6171.87,
+      "abr./25": 6729.48,
+      "mai./25": 6617.65,
+      "jun./25": 6843.84,
+      "jul./25": 7469.53,
+      "ago./25": 7641.97,
+      "set./25": 7754.71,
+      "out./25": 6949.13,
+      "nov./25": 6949.13,
+      "dez./25": 6386.88
+    }
+  ],
+  "recebimento_data": [
+    {
+      "Categoria": "Total do perÌodo",
+      "Centro de custo": null,
+      "Valor total": 1148033.66,
+      "AV(%)": 100.0,
+      "jan./25": 91898.4,
+      "fev./25": 95558.53,
+      "mar./25": 97671.37,
+      "abr./25": 73876.09,
+      "mai./25": 103408.21,
+      "jun./25": 99117.93,
+      "jul./25": 106568.42,
+      "ago./25": 101790.72,
+      "set./25": 97480.92,
+      "out./25": 75093.11,
+      "nov./25": 101187.43,
+      "dez./25": 104382.53
+    },
+    {
+      "Categoria": "Assessoria Cont·bil",
+      "Centro de custo": "Sem centro de custo",
+      "Valor total": 415286.84,
+      "AV(%)": 36.17,
+      "jan./25": 36345.72,
+      "fev./25": 31303.16,
+      "mar./25": 35156.24,
+      "abr./25": 28248.76,
+      "mai./25": 38884.84,
+      "jun./25": 27009.98,
+      "jul./25": 38240.24,
+      "ago./25": 55761.88,
+      "set./25": 41008.06,
+      "out./25": 32678.23,
+      "nov./25": 27764.01,
+      "dez./25": 22885.72
+    },
+    {
+      "Categoria": "A Assessoria Cont·bil",
+      "Centro de custo": "Sem centro de custo",
+      "Valor total": 343827.65,
+      "AV(%)": 29.95,
+      "jan./25": 16831.22,
+      "fev./25": 27270.36,
+      "mar./25": 29188.6,
+      "abr./25": 27420.77,
+      "mai./25": 28247.98,
+      "jun./25": 28077.8,
+      "jul./25": 39993.62,
+      "ago./25": 28231.81,
+      "set./25": 28570.88,
+      "out./25": 19331.71,
+      "nov./25": 47144.5,
+      "dez./25": 23518.4
+    },
+    {
+      "Categoria": "TransferÍncia entre o mesmo CNPJ",
+      "Centro de custo": "Sem centro de custo",
+      "Valor total": 126500.69,
+      "AV(%)": 11.02,
+      "jan./25": 25333.69,
+      "fev./25": 16900.0,
+      "mar./25": 15267.0,
+      "abr./25": 9000.0,
+      "mai./25": 8500.0,
+      "jun./25": 8000.0,
+      "jul./25": 13500.0,
+      "ago./25": 0.0,
+      "set./25": 10000.0,
+      "out./25": 0.0,
+      "nov./25": 0.0,
+      "dez./25": 20000.0
+    },
+    {
+      "Categoria": "ACORDO",
+      "Centro de custo": "Sem centro de custo",
+      "Valor total": 93344.72,
+      "AV(%)": 8.13,
+      "jan./25": 1715.01,
+      "fev./25": 2500.0,
+      "mar./25": 3771.97,
+      "abr./25": 315.02,
+      "mai./25": 15010.0,
+      "jun./25": 31764.0,
+      "jul./25": 3031.01,
+      "ago./25": 7807.0,
+      "set./25": 4716.6,
+      "out./25": 12099.67,
+      "nov./25": 10614.44,
+      "dez./25": 0.0
+    }
+  ],
+  "generated_at": "2026-02-04T14:24:41.652338"
+}

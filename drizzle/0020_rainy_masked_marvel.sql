@@ -1,0 +1,1 @@
+ALTER TABLE `clients` ADD `whatsappSource` enum('conta-azul','manual','import','unknown') DEFAULT 'unknown' NOT NULL;

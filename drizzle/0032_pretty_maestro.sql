@@ -1,0 +1,1 @@
+ALTER TABLE `receivables` ADD `paymentLinkCanonical` varchar(512);

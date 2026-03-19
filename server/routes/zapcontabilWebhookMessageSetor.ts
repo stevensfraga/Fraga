@@ -1,0 +1,775 @@
+import { Router } from "express";
+import mysql from "mysql2/promise";
+import Anthropic from "@anthropic-ai/sdk";
+import { sendWhatsAppMessage } from "../zapContabilIntegration";
+import { sendNfseEmail } from "../emailService";
+import { promises as fs } from "fs";
+import { normalizePhoneToE164 } from "../phoneUtils";
+import { emitNfse } from "../services/nfseEmissionEngine";
+
+const router = Router();
+
+// ── Constantes ──────────────────────────────────────────────────────────────
+const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
+const CLAUDE_TIMEOUT_MS = 20_000;
+
+// Modo de teste: usar valor R$ 1,00 e descrição "teste" para não gerar notas reais
+const MODO_TESTE = false;
+
+// Mapeamento de empresas disponíveis para emissão
+const EMPRESAS_DISPONIVEIS = [
+  { configId: 1,     slug: "fraga",       label: "Fraga Contabilidade", cnpj: "07838084000186" },
+  { configId: 30001, slug: "r7geradores", label: "R7 Geradores",        cnpj: "21918918000194" },
+];
+
+// ── #7: Código de serviço por CNAE ──────────────────────────────────────────
+function escolherCodigoServico(cnpjEmpresa: string, descricaoServico: string): string {
+  const cnpjLimpo = cnpjEmpresa.replace(/\D/g, "");
+  // Fraga Contabilidade → sempre 17.19.01 (Contabilidade, Anexo III, 2%)
+  if (cnpjLimpo === "07838084000186") {
+    return "17.19";
+  }
+  // R7 Geradores → locação/manutenção de equipamentos
+  if (cnpjLimpo === "21918918000194") {
+    const desc = descricaoServico.toLowerCase();
+    if (desc.includes("manuten") || desc.includes("reparo") || desc.includes("conserto")) {
+      return "14.01"; // Manutenção de máquinas e equipamentos
+    }
+    return "3.03"; // Locação de bens móveis (Anexo III)
+  }
+  // Regra geral: preferir Anexo III
+  return "17.19";
+}
+
+// ── #2: Dedup de mensagens (in-memory cache) ────────────────────────────────
+const processedMessages = new Map<string, number>();
+const DEDUP_TTL_MS = 120_000; // 2 minutos
+
+// ── Função para validar telefone autorizado ──────────────────────────────────
+async function isPhoneAuthorized(
+  connection: mysql.Connection,
+  phoneE164: string
+): Promise<boolean> {
+  try {
+    const [rows] = await connection.execute(
+      `SELECT id FROM nfse_usuarios_autorizados 
+       WHERE telefone = ? AND ativo = 1
+       LIMIT 1`,
+      [phoneE164]
+    );
+    const result = rows as any[];
+    return result.length > 0;
+  } catch (error) {
+    console.error(
+      `[SETOR-NF] ❌ Erro ao validar telefone: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return false;
+  }
+}
+
+function isDuplicate(messageId: string): boolean {
+  if (!messageId) return false;
+  const now = Date.now();
+  // Limpar entradas antigas
+  for (const [key, ts] of processedMessages) {
+    if (now - ts > DEDUP_TTL_MS) processedMessages.delete(key);
+  }
+  if (processedMessages.has(messageId)) {
+    console.log(`[SETOR-NF] ⏭️ DEDUP: messageId ${messageId} já processado — ignorando`);
+    return true;
+  }
+  processedMessages.set(messageId, now);
+  return false;
+}
+
+// ── #4: Competência automática ──────────────────────────────────────────────
+function getCompetenciaAtual(): string {
+  const now = new Date();
+  return `${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
+}
+
+// ── System Prompt (atualizado: sem competência, com email) ──────────────────
+function buildSystemPrompt(empresas: typeof EMPRESAS_DISPONIVEIS): string {
+  const listaEmpresas = empresas
+    .map((e, i) => `${i + 1}. ${e.label} (CNPJ: ${e.cnpj}) → slug: "${e.slug}"`)
+    .join("\n");
+
+  return `Você é um assistente da Fraga Contabilidade especializado em emissão de Nota Fiscal de Serviço (NFS-e).
+Seu objetivo é coletar os dados necessários para emitir a NFS-e e responder APENAS com a mensagem para o cliente, sem explicações adicionais.
+
+Empresas que podem EMITIR a nota (prestadoras de serviço):
+${listaEmpresas}
+
+Dados necessários (nesta ordem):
+1. Qual empresa vai EMITIR a nota (quem está prestando o serviço)
+2. CPF ou CNPJ do tomador (quem RECEBE a nota / contratante)
+3. Descrição do serviço prestado
+4. Valor do serviço (em reais)
+5. Email do cliente para receber a nota fiscal
+
+NÃO pergunte data de competência — será usada automaticamente o mês/ano atual.
+
+Quando tiver TODOS os 5 dados, responda EXATAMENTE neste formato JSON e nada mais:
+{"action":"emitir","empresa":"SLUG_DA_EMPRESA","cpf_cnpj":"...","descricao":"...","valor":0.00,"email":"cliente@email.com"}
+
+Onde "empresa" deve ser exatamente um dos slugs listados acima.
+
+Seja cordial, direto e profissional. Se o cliente enviar dados incompletos ou inválidos, peça novamente de forma educada.
+Sempre pergunte primeiro qual empresa vai emitir antes de pedir os outros dados.
+Se o cliente enviar vários dados de uma vez, aceite todos e peça apenas os que faltam.`;
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+async function callClaude(
+  history: Array<{ role: "user" | "assistant"; content: string }>,
+  newMessage: string,
+  systemPrompt: string
+): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY não configurada");
+
+  const client = new Anthropic({
+    apiKey,
+    timeout: CLAUDE_TIMEOUT_MS,
+    maxRetries: 3,
+  });
+
+  const messages: Array<{ role: "user" | "assistant"; content: string }> = [
+    ...history,
+    { role: "user", content: newMessage },
+  ];
+
+  const response = await client.messages.create({
+    model: CLAUDE_MODEL,
+    max_tokens: 512,
+    system: systemPrompt,
+    messages,
+    stream: false,
+  });
+
+  const textBlock = response.content.find((b: any) => b.type === "text");
+  return textBlock ? (textBlock as any).text : "";
+}
+
+interface EmitirData {
+  action: string;
+  empresa: string;
+  cpf_cnpj: string;
+  descricao: string;
+  valor: number;
+  email?: string;
+  competencia?: string;
+}
+
+function tryParseEmitirAction(text: string): EmitirData | null {
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*"action"\s*:\s*"emitir"[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (
+      parsed.action === "emitir" &&
+      parsed.empresa &&
+      parsed.cpf_cnpj &&
+      parsed.descricao &&
+      parsed.valor !== undefined
+    ) {
+      return parsed as EmitirData;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ── #8: Mensagem final correta com link do servidor ─────────────────────────
+async function sendNfseResult(
+  phone: string,
+  clientName: string,
+  numeroNfse: string | undefined,
+  pdfDownloadToken: string | undefined,
+  email: string | undefined
+): Promise<void> {
+  let successMsg = `🎉 *Nota Fiscal emitida com sucesso!*\n\n`;
+  if (numeroNfse) successMsg += `📋 *Número:* ${numeroNfse}\n`;
+  if (email) successMsg += `📧 *Nota enviada para:* ${email}\n`;
+
+  if (pdfDownloadToken) {
+    // #6: Link do próprio servidor (sem login)
+    const serverUrl = process.env.APP_URL || "https://dashboard.fragacontabilidade.com.br";
+    successMsg += `🔗 *Baixar PDF:* ${serverUrl}/api/nfse/pdf/${pdfDownloadToken}\n`;
+  }
+
+  successMsg += `\nQualquer dúvida, estamos à disposição! 😊`;
+
+  await sendWhatsAppMessage({
+    phone,
+    message: successMsg,
+    clientName,
+    clientId: "nfse-robot",
+    forceSend: true,
+  });
+
+}
+
+// ── Rota principal ────────────────────────────────────────────────────────────
+
+router.post("/webhook-message-setor", async (req, res) => {
+  const body = req.body;
+  let connection: mysql.Connection | undefined;
+
+  const SYSTEM_PROMPT = buildSystemPrompt(EMPRESAS_DISPONIVEIS);
+
+  try {
+    console.log("====================================================");
+    console.log(`[SETOR-NF] 📥 WEBHOOK RECEBIDO: ${new Date().toISOString()}`);
+
+    const action = body?.data?.action;
+    const objectType = body?.data?.object;
+    const payload = body?.data?.payload;
+
+    if (!action || !payload) {
+      return res.status(200).json({ success: false, reason: "Payload inválido" });
+    }
+
+    const fromMe = payload.fromMe || false;
+    if (fromMe) {
+      console.log(`[SETOR-NF] ℹ️ Ignorando - fromMe: true`);
+      return res.status(200).json({ success: false, reason: "Mensagem do sistema" });
+    }
+
+    // ── #2: Dedup por messageId ──────────────────────────────────────────
+    const messageId = payload.id || payload.messageId || "";
+    if (messageId && isDuplicate(String(messageId))) {
+      return res.status(200).json({ success: false, reason: "Mensagem duplicada" });
+    }
+
+    // -----------------------------------------------------------------------
+    // CASO 1: Transferência de setor → saudação automática
+    // -----------------------------------------------------------------------
+    if (objectType === "tickets") {
+      const ticketId = payload.id;
+      const sectorName = payload.queue?.name || "";
+      const rawPhone =
+        payload.contact?.number || payload.wbotTo?.replace(/@.*/, "") || "";
+      const phoneE164 = normalizePhoneToE164(rawPhone) || rawPhone;
+
+      // ── Validação de telefone autorizado ──────────────────────────────
+      const DATABASE_URL1 = process.env.DATABASE_URL || "";
+      const validationConn1 = await mysql.createConnection(DATABASE_URL1);
+      const isAuthorized1 = await isPhoneAuthorized(validationConn1, phoneE164);
+      await validationConn1.end();
+
+      if (!isAuthorized1) {
+        console.log(`[SETOR-NF] 🚫 Telefone não autorizado: ${phoneE164}`);
+        const clientName_temp = payload.contact?.name || "Cliente";
+        await sendWhatsAppMessage({
+          phone: phoneE164,
+          message: "❌ Desculpe, seu telefone não está autorizado para usar este serviço. Entre em contato com o suporte.",
+          clientName: clientName_temp,
+          clientId: "nfse-robot",
+          forceSend: true,
+        });
+        return res.status(200).json({ success: false, reason: "Telefone não autorizado" });
+      }
+
+      const clientName = payload.contact?.name || "Cliente";
+
+      console.log(
+        `[SETOR-NF] 🎫 Evento de ticket | ticketId: ${ticketId} | setor: ${sectorName}`
+      );
+
+      if (!sectorName.toLowerCase().includes("nota fiscal")) {
+        return res
+          .status(200)
+          .json({ success: false, reason: "Setor diferente de Nota Fiscal" });
+      }
+
+      if (!ticketId || !phoneE164) {
+        return res.status(200).json({ success: false, reason: "Dados insuficientes" });
+      }
+
+      console.log(
+        `[SETOR-NF] ✅ SETOR NOTA FISCAL DETECTADO! ticketId: ${ticketId} | phone: ${phoneE164}`
+      );
+
+      const DATABASE_URL = process.env.DATABASE_URL || "";
+      connection = await mysql.createConnection(DATABASE_URL);
+
+      const [existing] = await connection.execute(
+        "SELECT id, flow_state FROM zapcontabil_tickets WHERE ticket_id = ? AND status NOT IN ('completed','cancelled') LIMIT 1",
+        [String(ticketId)]
+      );
+      const ticketExists = (existing as any[]).length > 0;
+
+      console.log(`[SETOR-NF] 🤖 Gerando saudação via Claude para ${clientName}...`);
+      const greetingStart = Date.now();
+      const greeting = await callClaude(
+        [],
+        `Olá! Sou ${clientName} e fui transferido para o setor de Nota Fiscal. Quero emitir uma NFS-e.`,
+        SYSTEM_PROMPT
+      );
+      console.log(`[SETOR-NF] 🤖 Saudação gerada em ${Date.now() - greetingStart}ms`);
+
+      const initialHistory = [
+        {
+          role: "user",
+          content: `Olá! Sou ${clientName} e fui transferido para o setor de Nota Fiscal. Quero emitir uma NFS-e.`,
+        },
+        { role: "assistant", content: greeting },
+      ];
+
+      let ticketId_db: number;
+
+      if (ticketExists) {
+        const existingTicket = (existing as any)[0];
+        ticketId_db = existingTicket.id;
+        console.log(`[SETOR-NF] ℹ️ Ticket ${ticketId} já existe (id: ${ticketId_db}) — resetando`);
+        await connection.execute(
+          `UPDATE zapcontabil_tickets SET flow_state = 'ai_collecting', status = 'flow_started', conversation_history = ?, client_name = ?, phone_e164 = ?, current_sector = ?, processed_message_ids = NULL, updated_at = NOW() WHERE id = ?`,
+          [
+            JSON.stringify(initialHistory),
+            clientName,
+            phoneE164,
+            sectorName,
+            ticketId_db,
+          ]
+        );
+        console.log(`[SETOR-NF] ✅ Ticket resetado ID: ${ticketId_db}`);
+      } else {
+        const [insertResult] = await connection.execute(
+          `INSERT INTO zapcontabil_tickets
+           (ticket_id, phone_e164, client_name, status, flow_state, current_sector,
+            conversation_history, created_at, updated_at)
+           VALUES (?, ?, ?, 'flow_started', 'ai_collecting', ?, ?, NOW(), NOW())`,
+          [
+            String(ticketId),
+            phoneE164,
+            clientName,
+            sectorName,
+            JSON.stringify(initialHistory),
+          ]
+        );
+        ticketId_db = (insertResult as any).insertId;
+        console.log(`[SETOR-NF] ✅ Registro criado ID: ${ticketId_db}`);
+      }
+
+      await sendWhatsAppMessage({
+        phone: phoneE164,
+        message: greeting,
+        clientName,
+        clientId: "nfse-robot",
+        forceSend: true,
+      });
+
+      await connection.end();
+      console.log(`[SETOR-NF] 🏁 Saudação enviada automaticamente via Claude`);
+      return res
+        .status(200)
+        .json({ success: true, ticketId: ticketId_db, state: "ai_collecting" });
+    }
+
+    // -----------------------------------------------------------------------
+    // CASO 2: Mensagem recebida → Claude processa com histórico
+    // -----------------------------------------------------------------------
+    if (objectType === "messages") {
+      const ticketId = payload.ticketId;
+      const messageBody: string = payload.body || "";
+      const rawPhone =
+        payload.contact?.number || payload.ticket?.contact?.number || "";
+      const phoneE164 = normalizePhoneToE164(rawPhone) || rawPhone;
+
+      // ── Validação de telefone autorizado ──────────────────────────────
+      const DATABASE_URL2 = process.env.DATABASE_URL || "";
+      const validationConn2 = await mysql.createConnection(DATABASE_URL2);
+      const isAuthorized2 = await isPhoneAuthorized(validationConn2, phoneE164);
+      await validationConn2.end();
+
+      if (!isAuthorized2) {
+        console.log(`[SETOR-NF] 🚫 Telefone não autorizado: ${phoneE164}`);
+        const clientName_temp =
+          payload.contact?.name || payload.ticket?.contact?.name || "Cliente";
+        await sendWhatsAppMessage({
+          phone: phoneE164,
+          message: "❌ Desculpe, seu telefone não está autorizado para usar este serviço. Entre em contato com o suporte.",
+          clientName: clientName_temp,
+          clientId: "nfse-robot",
+          forceSend: true,
+        });
+        return res.status(200).json({ success: false, reason: "Telefone não autorizado" });
+      }
+
+      const clientName =
+        payload.contact?.name || payload.ticket?.contact?.name || "Cliente";
+      const sectorName =
+        payload.ticket?.queue?.name || payload.queue?.name || "";
+
+      console.log(
+        `[SETOR-NF] 💬 Mensagem | ticketId: ${ticketId} | setor: ${sectorName} | body: "${messageBody.substring(0, 60)}"`
+      );
+
+      if (!sectorName.toLowerCase().includes("nota fiscal")) {
+        return res
+          .status(200)
+          .json({ success: false, reason: "Setor diferente de Nota Fiscal" });
+      }
+
+      if (!ticketId || !phoneE164) {
+        return res.status(200).json({ success: false, reason: "Dados insuficientes" });
+      }
+
+      const DATABASE_URL = process.env.DATABASE_URL || "";
+      connection = await mysql.createConnection(DATABASE_URL);
+
+      // Busca 1: por ticketId exato
+      const [tickets] = await connection.execute(
+        "SELECT * FROM zapcontabil_tickets WHERE ticket_id = ? AND status NOT IN ('completed','cancelled') ORDER BY created_at DESC LIMIT 1",
+        [String(ticketId)]
+      );
+
+      let ticketRow: any = (tickets as any[])[0] || null;
+
+      // Busca 2 (fallback): por telefone quando ZapContábil cria novo ticketId
+      if (!ticketRow) {
+        console.log(`[SETOR-NF] ⚠️ Ticket ${ticketId} não encontrado — fallback por telefone ${phoneE164}`);
+        const phoneVariants = [phoneE164, rawPhone];
+        if (rawPhone.length === 13 && rawPhone.startsWith("55")) {
+          phoneVariants.push(rawPhone.slice(0, 4) + rawPhone.slice(5));
+        }
+        for (const phoneVariant of phoneVariants) {
+          const [byPhone] = await connection.execute(
+            "SELECT * FROM zapcontabil_tickets WHERE phone_e164 = ? AND status NOT IN ('completed','cancelled') AND flow_state NOT IN ('completed','cancelled','emitting') ORDER BY created_at DESC LIMIT 1",
+            [phoneVariant]
+          );
+          if ((byPhone as any[]).length > 0) {
+            ticketRow = (byPhone as any[])[0];
+            console.log(`[SETOR-NF] ✅ Ticket encontrado por telefone (${phoneVariant}): id=${ticketRow.id}`);
+            await connection.execute(
+              "UPDATE zapcontabil_tickets SET ticket_id = ?, updated_at = NOW() WHERE id = ?",
+              [String(ticketId), ticketRow.id]
+            );
+            console.log(`[SETOR-NF] 🔄 ticket_id atualizado para ${ticketId}`);
+            break;
+          }
+        }
+      }
+
+      if (!ticketRow) {
+        console.log(`[SETOR-NF] ℹ️ Nenhum ticket ativo para ticketId ${ticketId} nem telefone ${phoneE164}`);
+        await connection.end();
+        return res.status(200).json({ success: false, reason: "Ticket não encontrado" });
+      }
+
+      // ── #1/#2: Verificar idempotência no banco ────────────────────────────
+      const ticket = ticketRow;
+      const ticketId_db = ticket.id;
+      let processedIds: string[] = [];
+      try {
+        const raw = ticket.processed_message_ids;
+        if (raw) {
+          processedIds = typeof raw === "string" ? JSON.parse(raw) : raw;
+        }
+      } catch { processedIds = []; }
+
+      if (messageId && processedIds.includes(String(messageId))) {
+        console.log(`[SETOR-NF] ⏭️ DEDUP-DB: messageId ${messageId} já processado no ticket ${ticketId_db}`);
+        await connection.end();
+        return res.status(200).json({ success: false, reason: "Mensagem já processada" });
+      }
+
+      const currentFlowState = ticket.flow_state || "ai_collecting";
+
+      let conversationHistory: Array<{
+        role: "user" | "assistant";
+        content: string;
+      }> = [];
+      try {
+        const raw = ticket.conversation_history;
+        if (raw) {
+          conversationHistory = typeof raw === "string" ? JSON.parse(raw) : raw;
+        }
+      } catch {
+        conversationHistory = [];
+      }
+
+      console.log(
+        `[SETOR-NF] 🔄 Ticket DB ID: ${ticketId_db} | estado: ${currentFlowState} | histórico: ${conversationHistory.length} msgs`
+      );
+
+      if (
+        currentFlowState === "completed" ||
+        currentFlowState === "cancelled" ||
+        currentFlowState === "emitting"
+      ) {
+        await connection.end();
+        return res
+          .status(200)
+          .json({ success: false, reason: "Ticket já finalizado ou em emissão" });
+      }
+
+      // ── Chamar Claude com histórico completo ─────────────────────────────
+      const claudeStart = Date.now();
+      console.log(
+        `[SETOR-NF] 🤖 Chamando Claude com ${conversationHistory.length} msgs no histórico`
+      );
+      const claudeResponse = await callClaude(
+        conversationHistory,
+        messageBody,
+        SYSTEM_PROMPT
+      );
+      console.log(
+        `[SETOR-NF] 🤖 Resposta Claude em ${Date.now() - claudeStart}ms: ${claudeResponse.substring(0, 200)}`
+      );
+
+      const updatedHistory = [
+        ...conversationHistory,
+        { role: "user" as const, content: messageBody },
+        { role: "assistant" as const, content: claudeResponse },
+      ];
+
+      // Salvar messageId processado
+      const updatedProcessedIds = [...processedIds];
+      if (messageId) updatedProcessedIds.push(String(messageId));
+
+      // ── Verificar se Claude retornou JSON de emissão ─────────────────────
+      const emitirData = tryParseEmitirAction(claudeResponse);
+
+      if (emitirData) {
+        console.log(
+          `[SETOR-NF] 🚀 Claude coletou todos os dados!`,
+          emitirData
+        );
+
+        // Resolver configId a partir do slug da empresa
+        const empresaConfig = EMPRESAS_DISPONIVEIS.find(
+          (e) => e.slug === emitirData.empresa
+        );
+        if (!empresaConfig) {
+          console.error(
+            `[SETOR-NF] ❌ Empresa desconhecida: ${emitirData.empresa}`
+          );
+          const errorMsg = `Empresa "${emitirData.empresa}" não reconhecida. Por favor, escolha entre: ${EMPRESAS_DISPONIVEIS.map((e) => e.label).join(" ou ")}.`;
+          await connection.execute(
+            `UPDATE zapcontabil_tickets SET conversation_history = ?, last_message = ?, processed_message_ids = ?, updated_at = NOW() WHERE id = ?`,
+            [JSON.stringify(updatedHistory), messageBody, JSON.stringify(updatedProcessedIds), ticketId_db]
+          );
+          await sendWhatsAppMessage({
+            phone: phoneE164,
+            message: errorMsg,
+            clientName,
+            clientId: "nfse-robot",
+            forceSend: true,
+          });
+
+          await connection.end();
+          return res
+            .status(200)
+            .json({ success: false, reason: "Empresa desconhecida" });
+        }
+
+        const configId = empresaConfig.configId;
+        console.log(
+          `[SETOR-NF] 🏢 Empresa emissora: ${empresaConfig.label} | configId: ${configId}`
+        );
+
+        // #4: Competência automática (mês/ano atual)
+        const competencia = getCompetenciaAtual();
+        console.log(`[SETOR-NF] 📅 Competência automática: ${competencia}`);
+
+        // #7: Código de serviço por CNAE
+        const codigoServico = escolherCodigoServico(empresaConfig.cnpj, emitirData.descricao);
+        console.log(`[SETOR-NF] 📋 Código de serviço: ${codigoServico}`);
+
+        // #5: Email do cliente
+        const emailCliente = emitirData.email || "";
+        console.log(`[SETOR-NF] 📧 Email: ${emailCliente || "(não informado)"}`);
+
+        await connection.execute(
+          `UPDATE zapcontabil_tickets SET
+            flow_state = 'emitting',
+            status = 'processing',
+            conversation_history = ?,
+            client_document = ?,
+            service_description = ?,
+            service_value = ?,
+            last_message = ?,
+            processed_message_ids = ?,
+            updated_at = NOW()
+           WHERE id = ?`,
+          [
+            JSON.stringify(updatedHistory),
+            emitirData.cpf_cnpj,
+            emitirData.descricao,
+            emitirData.valor,
+            messageBody,
+            JSON.stringify(updatedProcessedIds),
+            ticketId_db,
+          ]
+        );
+
+        await sendWhatsAppMessage({
+          phone: phoneE164,
+          message: `⏳ Perfeito! Emitindo a nota pela *${empresaConfig.label}*. Aguarde um momento...`,
+          clientName,
+          clientId: "nfse-robot",
+          forceSend: true,
+        });
+
+        // Aplicar MODO_TESTE
+        const valorFinal = MODO_TESTE ? 1.00 : emitirData.valor;
+        const descricaoFinal = MODO_TESTE ? "teste" : emitirData.descricao;
+        if (MODO_TESTE) {
+          console.log(`[SETOR-NF] ⚠️ MODO_TESTE ativo: valor R$ 1,00, descrição "teste"`);
+        }
+
+        // Criar registro de emissão com código de serviço
+        const [insertEmissao] = await connection.execute(
+          `INSERT INTO nfse_emissoes
+           (configId, tomadorNome, tomadorCpfCnpj, valor, competencia,
+            descricaoServico, codigoServico, status, solicitadoPor, solicitadoVia, whatsappPhone)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'pendente', 'nfse-robot', 'whatsapp', ?)`,
+          [
+            configId,
+            ticket.client_name || clientName,
+            emitirData.cpf_cnpj,
+            valorFinal,
+            competencia,
+            descricaoFinal,
+            codigoServico,
+            phoneE164,
+          ]
+        );
+        const emissaoId = (insertEmissao as any).insertId;
+        console.log(
+          `[SETOR-NF] 🚀 Emissão criada | emissaoId: ${emissaoId} | empresa: ${empresaConfig.label} | código: ${codigoServico} | competência: ${competencia}`
+        );
+
+        await connection.execute(
+          "UPDATE zapcontabil_tickets SET nfse_emission_id = ?, updated_at = NOW() WHERE id = ?",
+          [emissaoId, ticketId_db]
+        );
+
+        await connection.end();
+
+        // #3: Timeout de 10 minutos — se não concluir, enviar aviso
+        const emissaoTimeout = setTimeout(async () => {
+          try {
+            const connTimeout = await mysql.createConnection(process.env.DATABASE_URL!);
+            const [checkRows] = await connTimeout.execute(
+              "SELECT status FROM nfse_emissoes WHERE id = ?",
+              [emissaoId]
+            );
+            const emissaoStatus = (checkRows as any[])[0]?.status;
+            if (emissaoStatus !== "emitida") {
+              console.log(`[SETOR-NF] ⏰ Timeout 10min: emissão ${emissaoId} ainda em status "${emissaoStatus}"`);
+              await sendWhatsAppMessage({
+                phone: phoneE164,
+                message: `⏳ Sua nota fiscal está sendo processada. Em breve você receberá a confirmação. Qualquer dúvida é só falar! 😊`,
+                clientName,
+                clientId: "nfse-robot",
+                forceSend: true,
+              });
+
+            }
+            await connTimeout.end();
+          } catch (timeoutErr: any) {
+            console.error(`[SETOR-NF] ❌ Erro no timeout: ${timeoutErr.message}`);
+          }
+        }, 10 * 60 * 1000); // 10 minutos
+
+        // Motor de emissão assíncrono
+        emitNfse(emissaoId)
+          .then(async (result) => {
+            clearTimeout(emissaoTimeout); // Cancelar timeout se concluiu
+            try {
+              const conn2 = await mysql.createConnection(process.env.DATABASE_URL!);
+              if (result.success) {
+                console.log(
+                  `[SETOR-NF] ✅ NFS-e emitida! Número: ${result.numeroNfse} | Token PDF: ${result.pdfDownloadToken || "N/A"}`
+                );
+                await conn2.execute(
+                  "UPDATE zapcontabil_tickets SET status = 'completed', flow_state = 'completed', updated_at = NOW() WHERE id = ?",
+                  [ticketId_db]
+                );
+                // #8: Mensagem final com link do servidor
+                await sendNfseResult(
+                  phoneE164,
+                  clientName,
+                  result.numeroNfse,
+                  result.pdfDownloadToken,
+                  emailCliente
+                );
+              } else {
+                console.error(`[SETOR-NF] ❌ Erro na emissão: ${result.error}`);
+                await conn2.execute(
+                  "UPDATE zapcontabil_tickets SET status = 'error', flow_state = 'error', last_error_message = ?, updated_at = NOW() WHERE id = ?",
+                  [result.error || "Erro desconhecido", ticketId_db]
+                );
+                // #3: NÃO enviar mensagem de erro imediata — o setTimeout de 10min cuidará disso
+                console.log(`[SETOR-NF] ℹ️ Erro na emissão — aguardando timeout de 10min para notificar`);
+              }
+              await conn2.end();
+            } catch (asyncErr: any) {
+              console.error(`[SETOR-NF] ❌ Erro no callback: ${asyncErr.message}`);
+            }
+          })
+          .catch((emitErr: any) => {
+            clearTimeout(emissaoTimeout);
+            console.error(`[SETOR-NF] ❌ Erro ao chamar emitNfse: ${emitErr.message}`);
+          });
+
+        return res
+          .status(200)
+          .json({ success: true, ticketId: ticketId_db, state: "emitting" });
+      }
+
+      // ── Resposta de texto → enviar ao cliente ────────────────────────────
+      await connection.execute(
+        `UPDATE zapcontabil_tickets SET
+          conversation_history = ?,
+          flow_state = 'ai_collecting',
+          last_message = ?,
+          processed_message_ids = ?,
+          updated_at = NOW()
+         WHERE id = ?`,
+        [JSON.stringify(updatedHistory), messageBody, JSON.stringify(updatedProcessedIds), ticketId_db]
+      );
+
+      await sendWhatsAppMessage({
+        phone: phoneE164,
+        message: claudeResponse,
+        clientName,
+        clientId: "nfse-robot",
+        forceSend: true,
+      });
+
+      await connection.end();
+      console.log(`[SETOR-NF] 🏁 PROCESSAMENTO CONCLUÍDO | estado: ai_collecting`);
+      return res
+        .status(200)
+        .json({ success: true, ticketId: ticketId_db, state: "ai_collecting" });
+    }
+
+    console.log(`[SETOR-NF] ℹ️ Tipo de objeto desconhecido: ${objectType}`);
+    return res
+      .status(200)
+      .json({ success: false, reason: `Tipo desconhecido: ${objectType}` });
+  } catch (error: any) {
+    console.error(`[SETOR-NF] ❌ ERRO: ${error.message}`);
+    console.error(`[SETOR-NF] Stack:`, error.stack);
+    if (connection) await connection.end().catch(() => {});
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ── Alias: /setor-nota-fiscal → mesma lógica do /webhook-message-setor ──
+router.post("/setor-nota-fiscal", async (req, res) => {
+  console.log("[SETOR-NF] 🔀 Alias /setor-nota-fiscal chamado — redirecionando internamente");
+  req.url = "/webhook-message-setor";
+  router.handle(req, res, () => {
+    res.status(200).json({ success: false, reason: "Rota não processada" });
+  });
+});
+
+export const zapcontabilWebhookMessageSetorRouter = router;
+export default router;

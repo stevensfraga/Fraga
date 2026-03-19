@@ -1,0 +1,1 @@
+ALTER TABLE `clients` ADD `optOut` boolean DEFAULT false NOT NULL;

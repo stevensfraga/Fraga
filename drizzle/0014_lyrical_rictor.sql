@@ -1,0 +1,1 @@
+ALTER TABLE `dispatches` MODIFY COLUMN `status` enum('pending','sent','failed','blocked') NOT NULL;

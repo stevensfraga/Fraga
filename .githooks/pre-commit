@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# FRAGA DASHBOARD - PRE-COMMIT HOOK
+# Valida antes de fazer commit
+
+echo "🔍 Validando código antes do commit..."
+
+# Verificar se há console.log ou debugger
+if git diff --cached | grep -E "console\.(log|error|warn)|debugger"; then
+    echo "❌ ERRO: Encontrado console.log ou debugger"
+    echo "   Remova antes de fazer commit"
+    exit 1
+fi
+
+# Verificar formatting
+npm run check 2>/dev/null
+if [ $? -ne 0 ]; then
+    echo "❌ ERRO: TypeScript teve problemas"
+    exit 1
+fi
+
+echo "✅ Validação passou!"
+exit 0

@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fraga-dashboard
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # Database
+      DATABASE_URL: ${DATABASE_URL}
+      # JWT
+      JWT_SECRET: ${JWT_SECRET}
+      # OAuth
+      VITE_APP_ID: ${VITE_APP_ID}
+      OAUTH_SERVER_URL: ${OAUTH_SERVER_URL}
+      VITE_OAUTH_PORTAL_URL: ${VITE_OAUTH_PORTAL_URL}
+      # Manus APIs
+      BUILT_IN_FORGE_API_URL: ${BUILT_IN_FORGE_API_URL}
+      BUILT_IN_FORGE_API_KEY: ${BUILT_IN_FORGE_API_KEY}
+      VITE_FRONTEND_FORGE_API_URL: ${VITE_FRONTEND_FORGE_API_URL}
+      VITE_FRONTEND_FORGE_API_KEY: ${VITE_FRONTEND_FORGE_API_KEY}
+      # Owner
+      OWNER_OPEN_ID: ${OWNER_OPEN_ID}
+      OWNER_NAME: ${OWNER_NAME}
+      # Conta Azul
+      CONTA_AZUL_API_BASE: ${CONTA_AZUL_API_BASE}
+      CONTA_AZUL_API_TOKEN: ${CONTA_AZUL_API_TOKEN}
+      CONTA_AZUL_CLIENT_ID: ${CONTA_AZUL_CLIENT_ID}
+      CONTA_AZUL_CLIENT_SECRET: ${CONTA_AZUL_CLIENT_SECRET}
+      CONTA_AZUL_REDIRECT_URI: ${CONTA_AZUL_REDIRECT_URI}
+      CONTA_AZUL_ACCOUNT_ID: ${CONTA_AZUL_ACCOUNT_ID}
+      CONTA_AZUL_PANEL_EMAIL: ${CONTA_AZUL_PANEL_EMAIL}
+      CONTA_AZUL_PANEL_PASSWORD: ${CONTA_AZUL_PANEL_PASSWORD}
+      # WhatsApp
+      WHATSAPP_API_KEY: ${WHATSAPP_API_KEY}
+      # Régua
+      REGUA_ENABLED: ${REGUA_ENABLED}
+      REGUA_BUSINESS_DAYS_ONLY: ${REGUA_BUSINESS_DAYS_ONLY}
+      REGUA_DAILY_LIMIT: ${REGUA_DAILY_LIMIT}
+      REGUA_QUIET_HOURS: ${REGUA_QUIET_HOURS}
+      REGUA_RATE_LIMIT_HOURS: ${REGUA_RATE_LIMIT_HOURS}
+      REGUA_ALLOWED_STAGES: ${REGUA_ALLOWED_STAGES}
+      # Jobs
+      ENABLE_SYNC_PAYMENTS_JOB: ${ENABLE_SYNC_PAYMENTS_JOB}
+      # NFS-e
+      SIEG_API_KEY: ${SIEG_API_KEY}
+      # Storage
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER}
+      STORAGE_BUCKET: ${STORAGE_BUCKET}
+      AWS_REGION: ${AWS_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      STORAGE_PUBLIC_BASE_URL: ${STORAGE_PUBLIC_BASE_URL}
+      # Aplicação
+      VITE_APP_TITLE: ${VITE_APP_TITLE}
+      VITE_APP_LOGO: ${VITE_APP_LOGO}
+      VITE_APP_ID: ${VITE_APP_ID}
+    volumes:
+      - /data/certificados:/data/certificados
+      - /var/log/fraga:/var/log/fraga
+      - /app/storage:/app/storage
+    networks:
+      - fraga-network
+    depends_on:
+      - db
+
+  db:
+    image: mysql:8.0
+    container_name: fraga-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - /data/mysql:/var/lib/mysql
+    networks:
+      - fraga-network
+    ports:
+      - "3306:3306"
+
+  nginx:
+    image: nginx:alpine
+    container_name: fraga-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    networks:
+      - fraga-network
+    depends_on:
+      - app
+
+networks:
+  fraga-network:
+    driver: bridge

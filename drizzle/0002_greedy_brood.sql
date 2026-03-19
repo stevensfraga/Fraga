@@ -1,0 +1,41 @@
+CREATE TABLE `collectionMetrics` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`clientId` int NOT NULL,
+	`messageType` enum('friendly','administrative','formal') NOT NULL,
+	`messageSent` boolean DEFAULT false,
+	`messageDelivered` boolean DEFAULT false,
+	`messageRead` boolean DEFAULT false,
+	`responseReceived` boolean DEFAULT false,
+	`sentAt` timestamp,
+	`deliveredAt` timestamp,
+	`readAt` timestamp,
+	`respondedAt` timestamp,
+	`outcome` enum('pending','agreed','paid','no_response','rejected') NOT NULL DEFAULT 'pending',
+	`amountRequested` decimal(12,2),
+	`amountRecovered` decimal(12,2),
+	`notes` text,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `collectionMetrics_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `dailyPerformanceSummary` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`date` date NOT NULL,
+	`messagesSent` int NOT NULL DEFAULT 0,
+	`messagesDelivered` int NOT NULL DEFAULT 0,
+	`messagesRead` int NOT NULL DEFAULT 0,
+	`responsesReceived` int NOT NULL DEFAULT 0,
+	`responseRate` decimal(5,2) NOT NULL DEFAULT '0.00',
+	`agreementsReached` int NOT NULL DEFAULT 0,
+	`paymentsReceived` int NOT NULL DEFAULT 0,
+	`rejections` int NOT NULL DEFAULT 0,
+	`totalRequested` decimal(12,2) NOT NULL DEFAULT '0.00',
+	`totalRecovered` decimal(12,2) NOT NULL DEFAULT '0.00',
+	`recoveryRate` decimal(5,2) NOT NULL DEFAULT '0.00',
+	`avgResponseTime` int NOT NULL DEFAULT 0,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `dailyPerformanceSummary_id` PRIMARY KEY(`id`),
+	CONSTRAINT `dailyPerformanceSummary_date_unique` UNIQUE(`date`)
+);
