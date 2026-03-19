@@ -42,3 +42,6 @@ npm-debug.log*
 .tmp
 tmp/
 .env.production
+.env.production
+.env.production.save
+scripts/agente-servidor.mjs
