@@ -70,6 +70,7 @@ import adminWhatsappRouter from "../adminWhatsappRouter";
 import adminCertificatesRouter from "../adminCertificatesRouter";
 import nfseRealEmissionRouter from "../nfseRealEmissionRouter";
 import nfseDiagnosticRouter from "../nfseDiagnosticRouter";
+import nfseCancelRouter from "../nfseCancelRouter";
 // import nfseAsyncEmissionRouter from "../nfseAsyncEmissionRouter"; // DISABLED: Requer Redis
 import { webhookDebugRouter } from "../routes/webhookDebug";
 // DISABLED: setor-nota-fiscal desativado para evitar loop duplo
@@ -488,6 +489,7 @@ app.use(cookieParser());
   app.use("/api/nfse", nfseRestRouter);
   app.use("/api/nfse", nfseRealEmissionRouter);
   app.use("/api/nfse", nfseDiagnosticRouter);
+  app.use("/api/nfse", nfseCancelRouter);
   // app.use("/api/nfse", nfseAsyncEmissionRouter); // DISABLED: Requer Redis
   
   // 🔍 Scheduler integrity check router

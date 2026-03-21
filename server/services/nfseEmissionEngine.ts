@@ -37,7 +37,10 @@
 
 import mysql from "mysql2/promise";
 import crypto from "crypto";
+import fs from "fs";
 import { storagePut } from "../storage";
+import { emitirViaSoap, DadosEmissao } from "./abrasfService";
+import { gerarPdfNota } from "./nfsePdfNota";
 
 import { savePdfLocally, generatePdfToken } from "../routes/nfseEmissionWebhook";import { loadStorageState, applyStorageState, invalidateStorageState, saveStorageState } from "./nfseStorageState";
 import { solveCaptchaAndLogin } from "./nfseCaptchaSolver";
@@ -342,11 +345,149 @@ export async function emitNfse(emissaoId: number): Promise<EmissaoResult> {
       tomadorData = tomadorByCnpj || null;
     }
 
-    // 3. Verificar modo de autenticação
-    const modoAuth = cfg.modo_auth || "login_contador";
-    if (modoAuth === "certificado_digital") {
-      throw new Error("Certificado Digital ainda não implementado. Use modo Login Contador.");
+    // 3. Tentar emissão via ABRASF (webservice) antes do Playwright
+    const codigoServico = (cfg.listaServico || em.codigoServico || "17.06").toString();
+    const abrasfDados: DadosEmissao = {
+      emissaoId,
+      prestadorCnpj: cfg.cnpj,
+      prestadorIm: cfg.inscricaoMunicipal || "",
+      prestadorRazaoSocial: cfg.razaoSocial,
+      tomadorNome: tomadorData?.nomeRazaoSocial || tomadorData?.nome || em.tomadorNome || "",
+      tomadorCpfCnpj: tomadorData?.cpfCnpj || em.tomadorCpfCnpj || "",
+      tomadorEmail: tomadorData?.email || em.tomadorEmail || undefined,
+      tomadorEndereco: tomadorData?.endereco || undefined,
+      tomadorNumero: tomadorData?.numero || undefined,
+      tomadorComplemento: tomadorData?.complemento || undefined,
+      tomadorBairro: tomadorData?.bairro || undefined,
+      tomadorCep: tomadorData?.cep || undefined,
+      tomadorCidade: tomadorData?.cidade || undefined,
+      tomadorUf: tomadorData?.uf || undefined,
+      valor: Number(em.valor),
+      competencia: em.competencia,
+      descricaoServico: em.descricaoServico || cfg.descricaoPadrao || "",
+      codigoServico,
+      cnaePrincipal: cfg.cnaePrincipal || undefined,
+      issRetido: !!cfg.issRetido,
+      aliquotaIss: 0.02,
+    };
+
+    log("ABRASF_ATTEMPT", "OK", { prestador: cfg.razaoSocial, cnpj: cfg.cnpj });
+    let abrasfResult;
+    try {
+      abrasfResult = await emitirViaSoap(abrasfDados);
+    } catch (abrasfErr: any) {
+      abrasfResult = { success: false, erro: abrasfErr.message };
     }
+
+    if (abrasfResult.success && abrasfResult.numeroNfse) {
+      log("ABRASF_SUCCESS", "OK", { numeroNfse: abrasfResult.numeroNfse, codigoVerificacao: abrasfResult.codigoVerificacao });
+
+      const numeroNfse = abrasfResult.numeroNfse;
+      const serieNfse = abrasfResult.serieNfse || "1";
+      const codigoVerificacao = abrasfResult.codigoVerificacao;
+
+      // Gerar PDF com os dados da nota
+      let pdfUrl: string | undefined;
+      let pdfLocalPath: string | undefined;
+      let pdfBuffer: Buffer | undefined;
+      let pdfDownloadToken: string | undefined;
+      try {
+        pdfBuffer = await gerarPdfNota({
+          numeroNfse,
+          serieNfse,
+          codigoVerificacao,
+          dataEmissao: abrasfResult.dataEmissao,
+          prestadorRazaoSocial: cfg.razaoSocial,
+          prestadorCnpj: cfg.cnpj,
+          prestadorIm: cfg.inscricaoMunicipal || "",
+          prestadorMunicipio: cfg.municipio || "Vila Velha",
+          prestadorUf: cfg.uf || "ES",
+          tomadorNome: abrasfDados.tomadorNome,
+          tomadorCpfCnpj: abrasfDados.tomadorCpfCnpj,
+          tomadorEmail: abrasfDados.tomadorEmail,
+          descricaoServico: abrasfDados.descricaoServico,
+          codigoServico: abrasfDados.codigoServico,
+          competencia: em.competencia,
+          valorServicos: Number(em.valor),
+          aliquotaIss: 0.02,
+          valorIss: Number(em.valor) * 0.02,
+          issRetido: abrasfDados.issRetido,
+          valorLiquido: abrasfDados.issRetido ? Number(em.valor) * 0.98 : Number(em.valor),
+        });
+        log("ABRASF_PDF_GENERATED", "OK", { bytes: pdfBuffer.length });
+
+        // Salvar PDF localmente
+        try {
+          const { path: savedPath, token } = await savePdfLocally(pdfBuffer, emissaoId, numeroNfse);
+          pdfLocalPath = savedPath;
+          pdfDownloadToken = token;
+          log("ABRASF_PDF_SAVED", "OK", { path: savedPath });
+        } catch (saveErr: any) {
+          log("ABRASF_PDF_SAVE", "WARN", { error: saveErr.message });
+        }
+
+        // Upload para S3
+        try {
+          const suffix = Math.random().toString(36).substring(2, 8);
+          const fileKey = `nfse-pdfs/${cfg.cnpj}/${emissaoId}-nfse-${numeroNfse}-${suffix}.pdf`;
+          const { url } = await storagePut(fileKey, pdfBuffer, "application/pdf");
+          pdfUrl = url;
+          log("ABRASF_PDF_UPLOADED", "OK", { url });
+        } catch (s3Err: any) {
+          log("ABRASF_PDF_S3", "WARN", { error: s3Err.message });
+        }
+      } catch (pdfErr: any) {
+        log("ABRASF_PDF_ERROR", "WARN", { error: pdfErr.message });
+      }
+
+      const baseUrl = process.env.APP_BASE_URL || "https://dashboard.fragacontabilidade.com.br";
+      const pdfTokenUrl = pdfDownloadToken ? `${baseUrl}/api/nfse/pdf/${pdfDownloadToken}` : undefined;
+
+      // Atualizar banco com status emitida
+      await rawExec(
+        `UPDATE nfse_emissoes SET status = 'emitida', numeroNf = ?, codigoVerificacao = ?,
+         pdfUrl = ?, pdfLocalPath = ?, processadoEm = NOW() WHERE id = ?`,
+        [numeroNfse, codigoVerificacao || null, pdfUrl || null, pdfLocalPath || null, emissaoId]
+      );
+      log("ABRASF_DB_UPDATED", "OK", { numeroNfse });
+
+      // Enviar email com PDF ao tomador
+      const tomadorEmailFinal = tomadorData?.email || em.tomadorEmail || null;
+      if (tomadorEmailFinal && pdfBuffer) {
+        try {
+          const { sendNfseEmail } = await import("../emailService");
+          const emailResult = await sendNfseEmail(
+            tomadorEmailFinal,
+            abrasfDados.tomadorNome || "Cliente",
+            numeroNfse,
+            pdfBuffer,
+            cfg.razaoSocial || "Fraga Contabilidade",
+            pdfDownloadToken
+          );
+          if (emailResult.success) {
+            log("ABRASF_EMAIL_SENT", "OK", { to: tomadorEmailFinal });
+          } else {
+            log("ABRASF_EMAIL_FAIL", "WARN", { to: tomadorEmailFinal, error: emailResult.error });
+          }
+        } catch (emailErr: any) {
+          log("ABRASF_EMAIL_ERROR", "WARN", { error: emailErr.message });
+        }
+      }
+
+      return {
+        success: true,
+        numeroNfse,
+        serieNfse,
+        pdfUrl: pdfTokenUrl || pdfUrl,
+        pdfLocalPath,
+        pdfDownloadToken,
+        logs,
+      } as any;
+    }
+
+    // ABRASF falhou → logar e cair no Playwright
+    log("ABRASF_FAILED", "WARN", { erro: abrasfResult.erro, fallback: "playwright" });
+    console.warn(`[NfseEngine] ABRASF falhou (${abrasfResult.erro}), usando Playwright como fallback`);
 
     // 4. Buscar portal
     if (!cfg.portal_id) {
@@ -427,7 +568,7 @@ export async function emitNfse(emissaoId: number): Promise<EmissaoResult> {
     if (!loginOk) {
       const apiKey2captcha = process.env.CAPTCHA_API_KEY;
       if (apiKey2captcha && portalUsuario && portalSenha) {
-        log("AUTH_STRATEGY", "OK", { layer: 2, method: "captcha_llm", usuario: portalUsuario, note: "CAPTCHA_API_KEY disponível mas usando LLM Vision (2captcha não integrado)" });
+        log("AUTH_STRATEGY", "OK", { layer: 2, method: "captcha_solver", usuario: portalUsuario, note: "Tentando 2captcha (primário) → DeepSeek Vision (fallback)" });
         await safeGoto(page, VILAVELHA_SELECTORS.urls.login, { timeout: 45000, fallbackUrl: VILAVELHA_SELECTORS.urls.controle, logFn: log });
         const loginResult2captcha = await solveCaptchaAndLogin(page, portalUsuario, portalSenha, 3);
         for (const l of loginResult2captcha.logs) logs.push(l);
@@ -568,6 +709,35 @@ export async function emitNfse(emissaoId: number): Promise<EmissaoResult> {
     );
 
     log("EMISSAO_COMPLETED", "OK", { numeroNfse, serieNfse, pdfUrl, pdfTokenUrl });
+
+    // 16. Enviar email com PDF ao tomador (sem restrição de horário comercial)
+    // Prioridade: 1) email no cadastro do tomador  2) email informado via WhatsApp
+    const tomadorEmail = tomadorData?.email || em.tomadorEmail || null;
+    if (tomadorEmail) {
+      try {
+        const { sendNfseEmail } = await import("../emailService");
+        const emailResult = await sendNfseEmail(
+          tomadorEmail,
+          em.tomadorNome || "Cliente",
+          numeroNfse,
+          null, // PDF não anexado — link do portal PMVV incluído no email
+          cfg.razaoSocial || "Fraga Contabilidade",
+          pdfDownloadToken
+        );
+        if (emailResult.success) {
+          log("EMAIL_NFSE_SENT", "OK", { to: tomadorEmail, numeroNfse });
+        } else {
+          log("EMAIL_NFSE_FAIL", "WARN", { to: tomadorEmail, error: emailResult.error });
+          console.error(`[NfseEngine] Falha ao enviar email para ${tomadorEmail}: ${emailResult.error}`);
+        }
+      } catch (emailErr: any) {
+        log("EMAIL_NFSE_ERROR", "WARN", { error: emailErr.message });
+        console.error(`[NfseEngine] Erro no envio de email: ${emailErr.message}`);
+      }
+    } else {
+      log("EMAIL_NFSE_SKIP", "WARN", { reason: "Tomador sem email cadastrado", tomadorId: em.tomadorId, tomadorNome: em.tomadorNome });
+      console.warn(`[NfseEngine] Email não enviado: tomador "${em.tomadorNome}" não tem email cadastrado`);
+    }
 
     // Nota: envio de WhatsApp é responsabilidade do chamador (webhook envia via sendNfseResult no .then())
     const pdfLinkParaWhatsApp = pdfTokenUrl || pdfUrl;
