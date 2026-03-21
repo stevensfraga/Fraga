@@ -345,6 +345,64 @@ export async function handleNfseWhatsAppRequest(
     };
   }
 
+  // ── Sem sessão ativa: detectar cancelamento via WhatsApp ────────
+  // Padrões: "cancelar nota 12345", "cancelar nfse 12345", "cancela 12345"
+  const cancelMatch = textTrimmed.match(/cancel[ae]r?\s+(?:nota|nfse|nfs-e)?\s*#?(\d+)/i);
+  if (cancelMatch) {
+    const numeroNfse = cancelMatch[1];
+    console.log(`[NfseWhatsApp] Solicitação de cancelamento da NFS-e ${numeroNfse} por ${fromPhone}`);
+
+    // Verificar se existe emissão com esse número
+    const emissoes = await rawQuery(
+      "SELECT e.id, e.status, e.numeroNf, c.cnpj, c.inscricaoMunicipal, c.razaoSocial FROM nfse_emissoes e JOIN nfse_config c ON c.id = e.configId WHERE e.numeroNf = ? AND e.status = 'emitida' LIMIT 1",
+      [numeroNfse]
+    );
+
+    if (!emissoes.length) {
+      return {
+        handled: true,
+        replyMessage: `❌ NFS-e nº *${numeroNfse}* não encontrada ou já cancelada.\n\nPara cancelar, a nota deve estar com status "Emitida".`,
+      };
+    }
+
+    const em = emissoes[0] as any;
+
+    // Tentar cancelar via ABRASF
+    try {
+      const { cancelarViaSoap } = await import("./abrasfService");
+      const resultado = await cancelarViaSoap(em.cnpj, em.inscricaoMunicipal, numeroNfse, "2");
+
+      if (resultado.success) {
+        await rawExec(
+          "UPDATE nfse_emissoes SET status = 'cancelada', erroDetalhes = 'Cancelada via WhatsApp/ABRASF' WHERE id = ?",
+          [em.id]
+        );
+        return {
+          handled: true,
+          replyMessage:
+            `✅ *NFS-e nº ${numeroNfse} cancelada com sucesso!*\n\n` +
+            `• Empresa: ${em.razaoSocial}\n` +
+            `• Cancelada via: Webservice ABRASF\n\n` +
+            `_Nota fiscal cancelada permanentemente na Prefeitura de Vila Velha._`,
+        };
+      } else {
+        return {
+          handled: true,
+          replyMessage:
+            `⚠️ *Cancelamento da NFS-e nº ${numeroNfse} não foi possível via webservice.*\n\n` +
+            `Motivo: ${resultado.erro || "Recusado pela prefeitura"}\n\n` +
+            `Se o cancelamento for necessário, entre em contato com a prefeitura pessoalmente ` +
+            `para solicitar processo administrativo de cancelamento.`,
+        };
+      }
+    } catch (err: any) {
+      return {
+        handled: true,
+        replyMessage: `❌ Erro ao cancelar a NFS-e nº ${numeroNfse}: ${err.message}`,
+      };
+    }
+  }
+
   // ── Sem sessão ativa: detectar nova intenção ────────────────────
   if (!isNfseRequest(textTrimmed)) {
     return { handled: false };

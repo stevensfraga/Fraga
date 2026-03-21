@@ -16,6 +16,7 @@ import { nfseEmissionService } from "../services/nfseEmissionService";
 import mysql from "mysql2/promise";
 import crypto from "crypto";
 import { audit } from "../_core/auditHelper";
+import { cancelarViaSoap } from "../services/abrasfService";
 
 // ══════════════════════════════════════════════════════════════════════
 // Helpers de banco de dados
@@ -682,7 +683,14 @@ const emissoesRouter = router({
 
       if (!em.numeroNf) throw new Error("Nota não possui número NF — não pode ser cancelada no portal");
 
-      // Marcar como em_cancelamento e retornar imediatamente (evita timeout do nginx)
+      // Buscar CNPJ e IM do prestador
+      const [configRow] = await rawQuery(
+        "SELECT cnpj, inscricaoMunicipal FROM nfse_config WHERE id = ?",
+        [em.configId]
+      );
+      const cfg = configRow as any;
+
+      // Marcar como em_cancelamento
       await rawExec(
         "UPDATE nfse_emissoes SET status = 'em_cancelamento' WHERE id = ?",
         [input.id]
@@ -691,22 +699,47 @@ const emissoesRouter = router({
         numeroNf: em.numeroNf, justificativa: input.justificativa,
       }, ctx.user?.name || "admin");
 
-      // Executar cancelamento via Playwright em background (fire-and-forget)
+      // 1ª tentativa: Cancelamento via ABRASF (webservice)
+      if (cfg?.cnpj && cfg?.inscricaoMunicipal) {
+        try {
+          const abrasfResult = await cancelarViaSoap(
+            cfg.cnpj, cfg.inscricaoMunicipal, em.numeroNf, "2"
+          );
+          if (abrasfResult.success) {
+            await rawExec(
+              "UPDATE nfse_emissoes SET status = 'cancelada', erroDetalhes = ? WHERE id = ?",
+              [`Cancelada via ABRASF: ${abrasfResult.mensagem}`, input.id]
+            );
+            await auditLog(input.id, em.configId, "cancelamento_abrasf_ok", {
+              numeroNf: em.numeroNf, mensagem: abrasfResult.mensagem,
+            }, ctx.user?.name || "admin");
+            return { success: true, numeroNf: em.numeroNf, message: `Nota ${em.numeroNf} cancelada com sucesso via webservice ABRASF.` };
+          } else {
+            console.warn(`[NfseCancel] ABRASF retornou erro: ${abrasfResult.erro}. Tentando Playwright...`);
+            await auditLog(input.id, em.configId, "cancelamento_abrasf_erro", {
+              erro: abrasfResult.erro, fallback: "playwright",
+            }, "system");
+          }
+        } catch (abrasfErr: any) {
+          console.warn(`[NfseCancel] Exceção ABRASF: ${abrasfErr.message}. Tentando Playwright...`);
+        }
+      }
+
+      // 2ª tentativa: Cancelamento via Playwright (fallback — background)
       import("../services/nfseEmissionEngine").then(({ cancelNfse }) => {
         cancelNfse(input.id, input.justificativa).then(async (result) => {
           if (!result.success) {
-            // Reverter para emitida em caso de erro (portal não cancelou)
             await rawExec("UPDATE nfse_emissoes SET status = 'emitida' WHERE id = ?", [input.id]);
-            await auditLog(input.id, em.configId, "cancelamento_erro", { error: result.error }, "system");
-            console.error(`[NfseCancel] Falha ao cancelar emissão ${input.id}:`, result.error);
+            await auditLog(input.id, em.configId, "cancelamento_playwright_erro", { error: result.error }, "system");
+            console.error(`[NfseCancel] Playwright também falhou para emissão ${input.id}:`, result.error);
           }
         }).catch(async (err) => {
           await rawExec("UPDATE nfse_emissoes SET status = 'emitida' WHERE id = ?", [input.id]);
-          console.error(`[NfseCancel] Exceção ao cancelar emissão ${input.id}:`, err);
+          console.error(`[NfseCancel] Exceção Playwright ao cancelar emissão ${input.id}:`, err);
         });
       }).catch(console.error);
 
-      return { success: true, numeroNf: em.numeroNf, message: "Cancelamento iniciado no portal da prefeitura. Aguarde alguns minutos." };
+      return { success: true, numeroNf: em.numeroNf, message: "Cancelamento via ABRASF não disponível para esta nota. Cancelamento iniciado no portal da prefeitura via automação. Aguarde alguns minutos." };
     }),
 
   downloadPdf: publicProcedure
