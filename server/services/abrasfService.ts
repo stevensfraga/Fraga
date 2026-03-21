@@ -297,10 +297,18 @@ async function sendSoapRequest(soapEnvelope: string, soapAction: string): Promis
       'SOAPAction': soapAction,
     },
     body: soapEnvelope,
-    // timeout: 30000 (node-fetch v2 não suporta diretamente, usar signal)
   });
 
-  if (!response.ok) {
+  if (response.status === 403) {
+    throw new Error(
+      'Acesso negado (403) ao webservice ABRASF de Vila Velha. ' +
+      'O servidor pode exigir whitelist de IP. Solicite à PMVV o cadastro do IP deste servidor. ' +
+      'Usando Playwright como fallback.'
+    );
+  }
+
+  if (!response.ok && response.status !== 500) {
+    // 500 pode ser SOAP Fault válido - deixar passar para parsing
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
 
