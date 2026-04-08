@@ -16,7 +16,6 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
-          script_stop: true
           script: |
             cd /opt/fraga-dashboard
             git pull origin main
