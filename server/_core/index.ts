@@ -199,7 +199,7 @@ import adminSiegAtivarConfigSaidaRouter from "../routes/adminSiegAtivarConfigSai
 
 // REMOVED: findAvailablePort and isPortAvailable
 // In production, always use process.env.PORT directly
-// Do NOT try to find alternative ports - breaks Manus health check
+// Do NOT try to find alternative ports - breaks health check
 
 async function startServer() {
   // 🚨 Feature flags para controlar jobs e schedulers
@@ -229,7 +229,7 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
   
-  // Trust proxy (Manus infrastructure uses reverse proxy)
+  // Trust proxy (reverse proxy via Nginx)
   // Required for req.protocol to return 'https' and for correct IP detection
   app.set('trust proxy', 1);
 
@@ -238,7 +238,7 @@ async function startServer() {
     res.status(200).json({ ok: true, ts: new Date().toISOString(), env: process.env.NODE_ENV || 'unknown' });
   });
   
-  // Alias para /ping (Manus health check)
+  // Health check
   app.get("/api/health", (req, res) => {
     res.status(200).json({ ok: true, message: "Backend is running" });
   });
@@ -260,39 +260,39 @@ app.use(cookieParser());
     res.status(200).json({ ok: true, message: "Backend is running" });
   });
   
-  // ❤️ Manus health check endpoint (CRITICO: Manus faz probe em /ping)
+  // Health check (root level)
   app.get("/ping", (req, res) => {
     res.status(200).json({ ok: true, status: "pong" });
   });
   
-  // ⚠️ Conta Azul OAuth callback — MUST be registered BEFORE Manus OAuth
+  // Conta Azul OAuth callback — MUST be registered BEFORE OAuth
   // The Conta Azul app has /api/oauth/callback registered as redirect_uri in their panel.
   // We intercept it here FIRST, detect if state is a Conta Azul state (64-char hex),
-  // and process it. If not, we call next() to let Manus OAuth handle it.
+  // and process it. If not, we call next() to let OAuth handle it.
   app.get('/api/oauth/callback', (req, res, next) => {
     const state = req.query.state as string | undefined;
     const code = req.query.code as string | undefined;
-    
+
     // Detect Conta Azul state: 64-char hex string (sha256)
     const isContaAzulState = state && /^[0-9a-f]{64}$/i.test(state);
-    
+
     console.log('[OAuth Router] /api/oauth/callback received');
     console.log('[OAuth Router] state:', state ? state.substring(0, 20) + '...' : 'MISSING');
     console.log('[OAuth Router] isContaAzulState:', isContaAzulState);
     console.log('[OAuth Router] code present:', !!code);
-    
+
     if (isContaAzulState) {
       console.log('[OAuth Router] → Routing to Conta Azul handler');
       return handleContaAzulCallback(req, res);
     }
-    
-    // Not a Conta Azul state — let Manus OAuth handle it
-    console.log('[OAuth Router] → Routing to Manus OAuth handler');
+
+    // Not a Conta Azul state — let OAuth handle it
+    console.log('[OAuth Router] → Routing to OAuth handler');
     return next();
   });
 
-  // ✅ Manus OAuth callback — registered AFTER Conta Azul interceptor
-  // Handles /api/oauth/callback with Manus base64-encoded state params
+  // OAuth callback — registered AFTER Conta Azul interceptor
+  // Handles /api/oauth/callback with base64-encoded state params
   registerOAuthRoutes(app);
   
   // Conta Azul OAuth callback handler (additional paths for compatibility)
@@ -764,13 +764,10 @@ app.use(cookieParser());
   }
 
 
-  // Em produção (Manus), sempre usar porta 3000
+  // Em produção, sempre usar porta 3000
   // CRITICO: Sempre usar process.env.PORT exatamente
-  // O Manus faz TCP probe na porta definida em process.env.PORT
-  // Se o app escolher outra porta, o probe falha
   const port = parseInt(process.env.PORT || "3000");
   console.log(`[Boot] Using port from environment: PORT=${port}`);
-  console.log(`[Boot] CRITICAL: Manus will probe GET /ping on 0.0.0.0:${port}`);
 
   // Variável para armazenar o job de refresh de tokens
   let tokenRefreshJob: any;

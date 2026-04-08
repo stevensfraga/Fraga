@@ -18,7 +18,7 @@ describe('Conta Azul OAuth Credentials', () => {
 
   it('should generate valid authorization URL', () => {
     const clientId = process.env.CONTA_AZUL_CLIENT_ID || '';
-    const redirectUri = 'https://3000-iuvpav1y5tfm6yazhoojk-5649b47d.us2.manus.computer/oauth/conta-azul/callback';
+    const redirectUri = 'https://dashboard.fragacontabilidade.com.br/oauth/conta-azul/callback';
     const scope = 'sales finance customers';
 
     const authUrl = new URL('https://api.contaazul.com/oauth2/authorize');

@@ -17,7 +17,7 @@ function createTestContext(): TrpcContext {
       openId: "test-user",
       email: "test@fraga.com",
       name: "Test User",
-      loginMethod: "manus",
+      loginMethod: "oauth",
       role: "admin",
       createdAt: new Date(),
       updatedAt: new Date(),

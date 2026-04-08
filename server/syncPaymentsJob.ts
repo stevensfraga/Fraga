@@ -281,7 +281,7 @@ export function startSyncPaymentsJob() {
   console.log(`[SyncPaymentsJob] Iniciando job recorrente (intervalo: ${interval / 1000}s)`);
 
   // IMPORTANTE: Executar primeira vez de forma ASSINCRONA (nao-bloqueante)
-  // para nao bloquear o health check do Manus em producao
+  // para nao bloquear o health check em producao
   setImmediate(() => {
     console.log('[SyncPaymentsJob] Executando primeira sincronizacao em background...');
     syncPaymentsJob(360).catch((err: any) => {

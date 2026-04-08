@@ -212,7 +212,7 @@ const normalizeToolChoice = (
 const resolveApiUrl = () =>
   ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
     ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-    : "https://forge.manus.im/v1/chat/completions";
+    : "https://generativelanguage.googleapis.com/v1beta/chat/completions";
 
 const assertApiKey = () => {
   if (!ENV.forgeApiKey) {

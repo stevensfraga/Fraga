@@ -5,7 +5,9 @@ export const ENV = {
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
   isProduction: process.env.NODE_ENV === "production",
+  // LLM API URL (OpenAI-compatible)
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
+  // LLM API Key
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   ekontrolApiKey: process.env.EKONTROL_API_KEY ?? "",
   ekontrolApiKeyEmpresa: process.env.EKONTROL_API_KEY_EMPRESA ?? "",

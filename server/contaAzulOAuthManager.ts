@@ -30,7 +30,7 @@ interface OAuthConfig {
 /**
  * Obter configuração OAuth do ambiente
  * ⚠️ OVERRIDE: Credenciais novas do app Conta Azul (fev/2026)
- * Quando as secrets do Manus forem atualizadas, remover os overrides abaixo
+ * TODO: Mover credenciais para .env
  */
 function getOAuthConfig(): OAuthConfig {
   // Override: novas credenciais do app Conta Azul
@@ -40,7 +40,7 @@ function getOAuthConfig(): OAuthConfig {
   const clientId = OVERRIDE_CLIENT_ID || process.env.CONTA_AZUL_CLIENT_ID;
   const clientSecret = OVERRIDE_CLIENT_SECRET || process.env.CONTA_AZUL_CLIENT_SECRET;
   // Usar redirect_uri EXATO cadastrado no painel Conta Azul
-  // É /api/oauth/callback (interceptado por nós ANTES do Manus OAuth via state detection)
+  // É /api/oauth/callback (interceptado via state detection)
   const redirectUri = process.env.CONTA_AZUL_REDIRECT_URI ;
 
   if (!clientId || !clientSecret) {

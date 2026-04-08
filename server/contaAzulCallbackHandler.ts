@@ -1,11 +1,11 @@
 /**
  * Handler para processar callback OAuth do Conta Azul
  * Troca o authorization code por access_token e salva no banco de dados
- * 
+ *
  * Recebe: GET /api/callback?code=...&state=...
- * 
+ *
  * IMPORTANTE: redirect_uri DEVE ser /api/callback (NÃO /api/oauth/callback)
- * porque /api/oauth/callback é interceptado pelo Manus OAuth.
+ * porque /api/oauth/callback é interceptado pelo OAuth.
  */
 
 import { Request, Response } from 'express';
@@ -29,7 +29,7 @@ setInterval(() => {
 /**
  * Redirect URI FIXO — DEVE ser /api/oauth/callback
  * Este é o URI cadastrado no app OAuth do Conta Azul no painel deles.
- * Agora interceptamos /api/oauth/callback ANTES do Manus OAuth (ver index.ts),
+ * Agora interceptamos /api/oauth/callback via state detection (ver index.ts),
  * detectando pelo state hex de 64 chars.
  */
 const FIXED_REDIRECT_URI = process.env.CONTA_AZUL_REDIRECT_URI ;

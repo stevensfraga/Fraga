@@ -14,7 +14,7 @@ describe('OAuth Credentials Validation', () => {
   it('should be able to call token endpoint with correct format', async () => {
     const clientId = process.env.CONTA_AZUL_CLIENT_ID;
     const clientSecret = process.env.CONTA_AZUL_CLIENT_SECRET;
-    const redirectUri = 'https://3000-iuvpav1y5tfm6yazhoojk-5649b47d.us2.manus.computer/oauth/conta-azul/callback';
+    const redirectUri = 'https://dashboard.fragacontabilidade.com.br/oauth/conta-azul/callback';
 
     const tokenPayload = new URLSearchParams({
       grant_type: 'authorization_code',

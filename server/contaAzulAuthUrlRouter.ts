@@ -6,8 +6,8 @@ const router = express.Router();
 /**
  * CONSTANTES FIXAS — REDIRECT_URI É /api/oauth/callback
  * Este é o URI cadastrado no painel do app Conta Azul.
- * Interceptamos /api/oauth/callback ANTES do Manus OAuth via state detection (ver index.ts):
- * state hex 64 chars = Conta Azul, state base64 = Manus OAuth.
+ * Interceptamos /api/oauth/callback via state detection (ver index.ts):
+ * state hex 64 chars = Conta Azul, state base64 = OAuth principal.
  */
 const SCOPE = 'openid profile aws.cognito.signin.user.admin';
 const REDIRECT_URI = process.env.CONTA_AZUL_REDIRECT_URI || 'https://dashboard.fragacontabilidade.com.br/api/oauth/callback';

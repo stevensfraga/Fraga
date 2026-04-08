@@ -10,16 +10,16 @@ function getQueryParam(req: Request, key: string): string | undefined {
 }
 
 /**
- * Manus OAuth callback handler.
+ * OAuth callback handler.
  * Called at /api/oauth/callback with ?code=...&state=...
  * The `state` param is base64(redirectUri) as set by getLoginUrl() in const.ts.
  */
-async function handleManusOAuthCallback(req: Request, res: Response) {
+async function handleOAuthCallback(req: Request, res: Response) {
   const code = getQueryParam(req, "code");
   const state = getQueryParam(req, "state");
   const errorParam = getQueryParam(req, "error");
 
-  console.log("[ManusOAuth] Callback received", {
+  console.log("[OAuth] Callback received", {
     code: code ? `${code.substring(0, 8)}...` : undefined,
     state: state ? `${state.substring(0, 20)}...` : undefined,
     error: errorParam,
@@ -33,12 +33,12 @@ async function handleManusOAuthCallback(req: Request, res: Response) {
   });
 
   if (errorParam) {
-    console.error("[ManusOAuth] OAuth error from provider:", errorParam);
+    console.error("[OAuth] OAuth error from provider:", errorParam);
     return res.status(400).send(`Erro ao processar autorização: ${errorParam}`);
   }
 
   if (!code || !state) {
-    console.error("[ManusOAuth] Missing code or state", { code: !!code, state: !!state });
+    console.error("[OAuth] Missing code or state", { code: !!code, state: !!state });
     return res.status(400).send("Erro ao processar autorização: parâmetros ausentes (code/state)");
   }
 
@@ -46,22 +46,22 @@ async function handleManusOAuthCallback(req: Request, res: Response) {
   let redirectUri: string;
   try {
     redirectUri = atob(state);
-    console.log("[ManusOAuth] Decoded redirectUri from state:", redirectUri);
+    console.log("[OAuth] Decoded redirectUri from state:", redirectUri);
   } catch (e) {
-    console.error("[ManusOAuth] Failed to decode state:", state, e);
+    console.error("[OAuth] Failed to decode state:", state, e);
     return res.status(400).send("Erro ao processar autorização: state inválido");
   }
 
   try {
     // Exchange code for token
-    console.log("[ManusOAuth] Exchanging code for token...");
+    console.log("[OAuth] Exchanging code for token...");
     const tokenResponse = await sdk.exchangeCodeForToken(code, state);
-    console.log("[ManusOAuth] Token exchange success, accessToken present:", !!tokenResponse?.accessToken);
+    console.log("[OAuth] Token exchange success, accessToken present:", !!tokenResponse?.accessToken);
 
     // Get user info
-    console.log("[ManusOAuth] Fetching user info...");
+    console.log("[OAuth] Fetching user info...");
     const userInfo = await sdk.getUserInfo(tokenResponse.accessToken);
-    console.log("[ManusOAuth] User info received:", {
+    console.log("[OAuth] User info received:", {
       openId: userInfo.openId,
       name: userInfo.name,
       email: userInfo.email,
@@ -85,7 +85,7 @@ async function handleManusOAuthCallback(req: Request, res: Response) {
 
     // Set session cookie
     const cookieOptions = getSessionCookieOptions(req);
-    console.log("[ManusOAuth] Setting cookie", {
+    console.log("[OAuth] Setting cookie", {
       name: COOKIE_NAME,
       options: cookieOptions,
     });
@@ -103,10 +103,10 @@ async function handleManusOAuthCallback(req: Request, res: Response) {
       appOrigin = redirectUri;
     }
 
-    console.log("[ManusOAuth] Login successful, redirecting to:", appOrigin);
+    console.log("[OAuth] Login successful, redirecting to:", appOrigin);
     return res.redirect(appOrigin);
   } catch (error: any) {
-    console.error("[ManusOAuth] Callback error:", {
+    console.error("[OAuth] Callback error:", {
       message: error?.message,
       status: error?.response?.status,
       data: error?.response?.data,
@@ -119,8 +119,8 @@ async function handleManusOAuthCallback(req: Request, res: Response) {
 }
 
 export function registerOAuthRoutes(app: Express) {
-  // Manus OAuth callback — MUST be registered BEFORE any Conta Azul callback handlers
+  // OAuth callback — MUST be registered BEFORE any Conta Azul callback handlers
   // that also listen on /api/oauth/callback
-  app.get("/api/oauth/callback", handleManusOAuthCallback);
-  console.log("[ManusOAuth] ✅ /api/oauth/callback registered");
+  app.get("/api/oauth/callback", handleOAuthCallback);
+  console.log("[OAuth] ✅ /api/oauth/callback registered");
 }

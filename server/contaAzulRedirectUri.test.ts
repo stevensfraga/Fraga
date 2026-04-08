@@ -15,12 +15,12 @@ describe('Conta Azul Redirect URI Configuration', () => {
 
   it('should have correct domain format', () => {
     const redirectUri = process.env.CONTA_AZUL_REDIRECT_URI;
-    
+
     // Should be a valid URL
     expect(() => new URL(redirectUri!)).not.toThrow();
-    
-    // Should contain manus.computer domain
-    expect(redirectUri).toContain('manus.computer');
+
+    // Should contain fragacontabilidade.com.br domain
+    expect(redirectUri).toContain('fragacontabilidade.com.br');
   });
 
   it('should match OAuth callback path', () => {
