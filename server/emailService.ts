@@ -290,48 +290,48 @@ export async function sendNfseEmail(
     const smtpFromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || "nao-responda@fragacontabilidade.com.br";
     const smtpFromName = process.env.SMTP_FROM_NAME || "Fraga Contabilidade";
 
-    // Preparar link de download
-    const serverUrl = process.env.APP_URL || "https://dashboard.fragacontabilidade.com.br";
-    const pdfDownloadLink = pdfDownloadToken ? `${serverUrl}/api/nfse/pdf/${pdfDownloadToken}` : null;
+    const baseUrl = process.env.APP_BASE_URL || "https://dashboard.fragacontabilidade.com.br";
+    const pdfDownloadUrl = pdfDownloadToken ? `${baseUrl}/api/nfse/pdf/${pdfDownloadToken}` : null;
 
     // Construir conteúdo HTML
-    let htmlBody = `
+    const htmlBody = `
       <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6;">
           <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h2 style="color: #2ecc71;">✅ Nota Fiscal Emitida com Sucesso!</h2>
-            
-            <p>Olá <strong>${clientName}</strong>,</p>
-            
-            <p>Sua Nota Fiscal de Serviço (NFS-e) foi emitida com sucesso!</p>
-            
-            <div style="background-color: #f0f0f0; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <p><strong>Número da NFS-e:</strong> ${numeroNfse}</p>
-              <p><strong>Empresa Emissora:</strong> ${empresaNome}</p>
-              <p><strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')}</p>
-            </div>
-            `;
+            <h2 style="color: #2ecc71;">&#10003; Nota Fiscal Emitida com Sucesso!</h2>
 
-    // Se houver pdfBuffer, informar que está anexado
-    if (pdfBuffer && pdfBuffer.length > 0) {
-      htmlBody += `<p>O PDF da sua nota fiscal está anexado neste email.</p>`;
-    } else if (pdfDownloadLink) {
-      // Se não houver pdfBuffer mas houver token, informar link de download
-      htmlBody += `
-            <p>Para baixar o PDF da sua nota fiscal, clique no link abaixo:</p>
-            <p style="text-align: center; margin: 20px 0;">
-              <a href="${pdfDownloadLink}" style="background-color: #2ecc71; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-                📥 Baixar PDF da NFS-e
+            <p>Ol&aacute; <strong>${clientName}</strong>,</p>
+
+            <p>Sua Nota Fiscal de Servi&ccedil;o (NFS-e) foi emitida com sucesso!</p>
+
+            <div style="background-color: #f0f0f0; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <p><strong>N&uacute;mero da NFS-e:</strong> <span style="font-size: 1.2em; color: #2ecc71;">${numeroNfse}</span></p>
+              <p><strong>Empresa Emissora:</strong> ${empresaNome}</p>
+              <p><strong>Data de Emiss&atilde;o:</strong> ${new Date().toLocaleDateString('pt-BR')}</p>
+            </div>
+
+            ${pdfDownloadUrl ? `
+            <p style="text-align: center; margin: 25px 0;">
+              <a href="${pdfDownloadUrl}" style="background-color: #27ae60; color: white; padding: 14px 32px; text-decoration: none; border-radius: 6px; display: inline-block; font-size: 16px; font-weight: bold;">
+                &#8659; Baixar PDF da NFS-e
               </a>
             </p>
-            `;
-    }
+            <p style="color: #555; font-size: 13px; text-align: center;">
+              Link direto: <a href="${pdfDownloadUrl}" style="color: #27ae60;">${pdfDownloadUrl}</a><br>
+              <em>(v&aacute;lido por 24 horas)</em>
+            </p>
+            ` : `
+            <p>Voc&ecirc; pode consultar sua nota no portal da prefeitura informando o n&uacute;mero da NFS-e acima.</p>
+            <p style="color: #555; font-size: 13px;">
+              Portal: <a href="https://nfse.vilavelha.es.gov.br" style="color: #27ae60;">https://nfse.vilavelha.es.gov.br</a><br>
+              Informe o n&uacute;mero <strong>${numeroNfse}</strong> para localizar sua nota.
+            </p>
+            `}
 
-    htmlBody += `
-            <p>Caso tenha dúvidas, não hesite em entrar em contato conosco!</p>
-            
+            <p>Caso tenha d&uacute;vidas, n&atilde;o hesite em entrar em contato conosco!</p>
+
             <p style="color: #666; font-size: 12px; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
-              Este é um email automático. Não responda a este endereço de email.
+              Este &eacute; um email autom&aacute;tico. N&atilde;o responda a este endere&ccedil;o de email.
             </p>
           </div>
         </body>
@@ -341,25 +341,24 @@ export async function sendNfseEmail(
     const mailOptions: any = {
       from: `${smtpFromName} <${smtpFromEmail}>`,
       to: clientEmail,
-      subject: `✅ Sua Nota Fiscal de Serviço (NFS-e) ${numeroNfse} está pronta!`,
+      subject: `NFS-e ${numeroNfse} emitida com sucesso - ${empresaNome}`,
       html: htmlBody,
     };
 
-    // Anexar PDF apenas se tiver conteúdo
-    if (pdfBuffer && pdfBuffer.length > 0) {
+    if (pdfBuffer) {
       mailOptions.attachments = [
         {
-          filename: `NFS-e_${numeroNfse}.pdf`,
+          filename: `NFS-e-${numeroNfse}.pdf`,
           content: pdfBuffer,
-          contentType: 'application/pdf'
-        }
+          contentType: "application/pdf",
+        },
       ];
     }
 
     const result = await transport.sendMail(mailOptions);
-    
-    const attachmentInfo = pdfBuffer && pdfBuffer.length > 0 ? "com anexo PDF" : "com link de download";
-    console.log(`[Email-NFSE] ✅ Email enviado com sucesso para ${clientEmail} (${attachmentInfo}) | messageId: ${result.messageId}`);
+
+    const pdfInfo = pdfBuffer ? ` + PDF anexado (${pdfBuffer.length} bytes)` : " (sem PDF, link portal)";
+    console.log(`[Email-NFSE] ✅ Email enviado com sucesso para ${clientEmail}${pdfInfo} | messageId: ${result.messageId}`);
     return { success: true };
 
   } catch (error: any) {

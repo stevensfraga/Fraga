@@ -64,6 +64,7 @@ import testPrechargeRouter from "../testPrechargeRouter";
 import { initReactivationScheduler, stopReactivationScheduler } from "../jobs/reactivationScheduler";
 import { initReguaJob, stopReguaJob, executeReguaJob } from "../jobs/reguaCobrancaJob";
 import { startAllJobs } from "../jobs/jobScheduler";
+import { startFetchPaymentLinksJob, stopFetchPaymentLinksJob } from "../jobs/fetchPaymentLinksJob";
 import testReactivationRouter from "../testReactivationRouter";
 import auditReportRouter from "../auditReportRouter";
 import adminWhatsappRouter from "../adminWhatsappRouter";
@@ -776,6 +777,7 @@ app.use(cookieParser());
   let syncPaymentsHandle: any;
   let prechargeSchedulerTask: any;
   let reactivationSchedulerTask: any;
+  let fetchPaymentLinksTask: any;
 
   console.log("[Boot] starting server…");
   console.log(`[Boot] Listening on 0.0.0.0:${port}`);
@@ -936,6 +938,11 @@ app.use(cookieParser());
     initReguaJob();
     console.log("[ReguaJob] ✅ Régua de cobrança inicializada (09:00 e 14:00, seg-sex)");
 
+    // Inicializar job de busca de links de pagamento (a cada 10 minutos)
+    console.log("[FetchPaymentLinks] Inicializando job de busca de links de pagamento...");
+    fetchPaymentLinksTask = startFetchPaymentLinksJob();
+    console.log("[FetchPaymentLinks] ✅ Job iniciado (a cada 10 minutos)");
+
     // ⚠️ DESABILITADO NO STARTUP: Job Scheduler
     // Será iniciado manualmente via endpoint /api/admin/start-jobs
     console.log('[JobScheduler] ⏸️ Job scheduler DESABILITADO no startup (será iniciado via endpoint)');
@@ -969,6 +976,7 @@ app.use(cookieParser());
     stopSyncPaymentsJob(syncPaymentsHandle);
     if (prechargeSchedulerTask) stopPrechargeScheduler(prechargeSchedulerTask);
     stopReguaJob();
+    if (fetchPaymentLinksTask) stopFetchPaymentLinksJob(fetchPaymentLinksTask);
     // stopWhatsappDispatchWorker(); // DISABLED: Requer Redis
     server.close(() => {
       console.log('Servidor encerrado');

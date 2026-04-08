@@ -162,7 +162,8 @@ export const VILAVELHA_SELECTORS = {
     // Número da NFS-e (a confirmar após emissão)
     numeroNfse: "#numeroNFSe, span.numero-nfse, td.numero-nfse",
     // Botão de download do PDF
-    btnDownloadPdf: "button[hint*='PDF'], a[href*='pdf'], button:has-text('PDF'), a:has-text('Imprimir')",
+    btnDownloadPdf: "button#_imagebutton7, button[hint*='PDF'], a[href*='pdf'], button:has-text('PDF'), a:has-text('Imprimir')",
+    btnDownloadXml: "button#btnXML, button[hint*='XML'], a[href*='xml'], button:has-text('XML')",
     // Indicador de sucesso
     successIndicator: "div.alert-success, span:has-text('emitida'), .sucesso",
     // Indicador de erro

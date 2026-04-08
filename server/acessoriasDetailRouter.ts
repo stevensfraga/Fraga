@@ -158,7 +158,7 @@ export const acessoriasDetailRouter = router({
         );
 
         // Buscar dados da empresa principal (Fraga Contabilidade) com cache
-        const companyData = await fetchWithCache("21918918000194");
+        const companyData = null; // R7 removida
 
         if (!companyData) {
           console.warn("[Acessórias] Nenhuma empresa encontrada");

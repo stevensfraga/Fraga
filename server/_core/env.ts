@@ -20,4 +20,6 @@ export const ENV = {
   fragaAdminKey: process.env.FRAGA_ADMIN_KEY ?? "",
   // NFS-e Nacional (ADN) — captura centralizada de notas de serviço
   useNfseNacional: process.env.USE_NFSE_NACIONAL === 'true', // default: false; defina USE_NFSE_NACIONAL=true para habilitar
+  // Acessórias
+  acessoriasApiToken: process.env.ACESSORIAS_API_TOKEN ?? "",
 };

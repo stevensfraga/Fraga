@@ -102,6 +102,7 @@ const REGUA_DEDUP_MINUTES = parseInt(process.env.REGUA_DEDUP_MINUTES || '10080',
 const REGUA_RATE_LIMIT_HOURS = parseInt(process.env.REGUA_RATE_LIMIT_HOURS || '12', 10);
 const REGUA_BUSINESS_DAYS_ONLY = process.env.REGUA_BUSINESS_DAYS_ONLY !== 'false'; // default true
 const FINANCEIRO_QUEUE_ID = parseInt(process.env.FINANCEIRO_QUEUE_ID || process.env.ZAP_DEFAULT_QUEUE_ID_FINANCEIRO || '5', 10);
+const COBRANCA_QUEUE_ID = parseInt(process.env.COBRANCA_QUEUE_ID || '0', 10);
 const ZAP_API_URL = process.env.ZAP_CONTABIL_API_URL || 'https://api-fraga.zapcontabil.chat';
 const ZAP_API_KEY = process.env.ZAP_CONTABIL_API_KEY || process.env.WHATSAPP_API_KEY || '';
 
@@ -531,11 +532,48 @@ export async function saveReguaAudit(runId: string, dryRun: boolean, entry: Regu
   }
 }
 
+// ─── BUSCAR TICKET ABERTO NO SETOR COBRANÇA ──────────────────────────────────
+
+/**
+ * Busca ticket aberto do cliente no setor Cobrança (COBRANCA_QUEUE_ID).
+ * Retorna o ticketId se encontrado, null caso contrário.
+ */
+async function getOrCreateCobrancaTicket(phoneDigits: string): Promise<number | null> {
+  if (COBRANCA_QUEUE_ID <= 0) return null;
+
+  try {
+    const res = await axios.get(
+      `${ZAP_API_URL}/api/tickets?contact=${phoneDigits}&status=open`,
+      { headers: { Authorization: `Bearer ${ZAP_API_KEY}` }, timeout: 8000 }
+    );
+
+    const tickets = res.data?.data || res.data?.tickets || res.data || [];
+    const ticketList = Array.isArray(tickets) ? tickets : [];
+
+    // Procurar ticket aberto no setor Cobrança
+    const cobrancaTicket = ticketList.find(
+      (t: any) => (t.queueId || t.queue_id) === COBRANCA_QUEUE_ID
+    );
+
+    if (cobrancaTicket?.id) {
+      console.log(`[Régua] 🔄 Reutilizando ticket #${cobrancaTicket.id} no setor Cobrança para ${phoneDigits}`);
+      return cobrancaTicket.id;
+    }
+
+    // Nenhum ticket Cobrança aberto — retorna null para criar via /api/send
+    return null;
+  } catch (error: any) {
+    console.warn(`[Régua] ⚠️ Erro ao buscar ticket Cobrança para ${phoneDigits}:`, error.message);
+    return null;
+  }
+}
+
 // ─── ENVIAR MENSAGEM ─────────────────────────────────────────────────────────
 
 export async function sendReguaMessage(phoneE164: string, message: string): Promise<{
   ok: boolean;
   messageId?: string;
+  ticketId?: number;
   providerStatus?: string;
   rawResult?: string;
   error?: string;
@@ -545,16 +583,73 @@ export async function sendReguaMessage(phoneE164: string, message: string): Prom
   }
 
   const phoneDigits = phoneE164.replace(/\D/g, '');
-  const url = `${ZAP_API_URL}/api/send/${phoneDigits}`;
 
+  // ── Setor Cobrança: criar ou reutilizar ticket ──
+  if (COBRANCA_QUEUE_ID > 0) {
+    try {
+      const existingTicketId = await getOrCreateCobrancaTicket(phoneDigits);
+
+      if (existingTicketId) {
+        // Reutilizar ticket existente no setor Cobrança
+        const response = await axios.post(
+          `${ZAP_API_URL}/api/messages/${existingTicketId}`,
+          { body: message, fromMe: true, read: true },
+          {
+            headers: {
+              Authorization: `Bearer ${ZAP_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            timeout: 15000,
+          }
+        );
+        const messageId = response.data?.message?.id || response.data?.messageId || response.data?.id || null;
+        return {
+          ok: true,
+          messageId: messageId || `ack_${Date.now()}`,
+          ticketId: existingTicketId,
+          providerStatus: 'sent',
+          rawResult: JSON.stringify(response.data).substring(0, 500),
+        };
+      }
+
+      // Nenhum ticket Cobrança aberto — criar novo via /api/send com queueId Cobrança
+      console.log(`[Régua] 🎫 Criando novo ticket no setor Cobrança (queueId=${COBRANCA_QUEUE_ID}) para ${phoneDigits}`);
+      const createResponse = await axios.post(
+        `${ZAP_API_URL}/api/send/${phoneDigits}`,
+        { body: message, connectionFrom: 0, queueId: COBRANCA_QUEUE_ID },
+        {
+          headers: {
+            Authorization: `Bearer ${ZAP_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 15000,
+        }
+      );
+      const messageId = createResponse.data?.message?.id || createResponse.data?.messageId || createResponse.data?.id || null;
+      const newTicketId = createResponse.data?.ticket?.id || createResponse.data?.ticketId || null;
+      if (newTicketId) {
+        console.log(`[Régua] ✅ Novo ticket Cobrança criado: #${newTicketId} para ${phoneDigits}`);
+      }
+      return {
+        ok: true,
+        messageId: messageId || `ack_${Date.now()}`,
+        ticketId: newTicketId || undefined,
+        providerStatus: 'sent',
+        rawResult: JSON.stringify(createResponse.data).substring(0, 500),
+      };
+    } catch (error: any) {
+      const httpStatus = error.response?.status || 0;
+      const errMsg = error.response?.data?.message || error.response?.data?.error || error.message;
+      console.error(`[Régua] ❌ Erro ao usar setor Cobrança: HTTP ${httpStatus}: ${errMsg} — usando fallback Financeiro`);
+      // Cai no fallback abaixo
+    }
+  }
+
+  // ── Fallback: fila Financeiro (comportamento original) ──
   try {
     const response = await axios.post(
-      url,
-      {
-        body: message,
-        connectionFrom: 0,
-        queueId: FINANCEIRO_QUEUE_ID,
-      },
+      `${ZAP_API_URL}/api/send/${phoneDigits}`,
+      { body: message, connectionFrom: 0, queueId: FINANCEIRO_QUEUE_ID },
       {
         headers: {
           Authorization: `Bearer ${ZAP_API_KEY}`,
@@ -563,12 +658,11 @@ export async function sendReguaMessage(phoneE164: string, message: string): Prom
         timeout: 15000,
       }
     );
-
     const messageId = response.data?.message?.id || response.data?.messageId || response.data?.id || null;
-
     return {
       ok: true,
       messageId: messageId || `ack_${Date.now()}`,
+      ticketId: response.data?.ticket?.id || response.data?.ticketId || undefined,
       providerStatus: 'sent',
       rawResult: JSON.stringify(response.data).substring(0, 500),
     };
@@ -587,25 +681,34 @@ export async function sendReguaMessage(phoneE164: string, message: string): Prom
 
 /**
  * Adicionar tag IA_COBRANCA e nota interna ao ticket do cliente no ZapContábil.
+ * Se knownTicketId for fornecido, usa diretamente sem buscar na API.
  */
-export async function tagAndNoteTicket(phoneE164: string, stage: ReguaStage): Promise<void> {
+export async function tagAndNoteTicket(phoneE164: string, stage: ReguaStage, knownTicketId?: number): Promise<void> {
   if (!ZAP_API_KEY) return;
 
   try {
     const phoneDigits = phoneE164.replace(/\D/g, '');
+    let ticketId: number | undefined = knownTicketId;
 
-    // 1. Buscar ticket aberto do cliente
-    const ticketRes = await axios.get(
-      `${ZAP_API_URL}/api/tickets?contact=${phoneDigits}&status=open&limit=1`,
-      { headers: { Authorization: `Bearer ${ZAP_API_KEY}` }, timeout: 8000 }
-    );
+    if (!ticketId) {
+      // Buscar ticket aberto do cliente — preferir setor Cobrança se configurado
+      const ticketRes = await axios.get(
+        `${ZAP_API_URL}/api/tickets?contact=${phoneDigits}&status=open`,
+        { headers: { Authorization: `Bearer ${ZAP_API_KEY}` }, timeout: 8000 }
+      );
 
-    const tickets = ticketRes.data?.data || ticketRes.data?.tickets || ticketRes.data || [];
-    const ticketList = Array.isArray(tickets) ? tickets : [];
-    if (ticketList.length === 0) return;
+      const tickets = ticketRes.data?.data || ticketRes.data?.tickets || ticketRes.data || [];
+      const ticketList = Array.isArray(tickets) ? tickets : [];
+      if (ticketList.length === 0) return;
 
-    const ticket = ticketList[0];
-    const ticketId = ticket.id;
+      // Preferir ticket do setor Cobrança, senão pega o primeiro
+      const cobrancaTicket = COBRANCA_QUEUE_ID > 0
+        ? ticketList.find((t: any) => (t.queueId || t.queue_id) === COBRANCA_QUEUE_ID)
+        : null;
+      const ticket = cobrancaTicket || ticketList[0];
+      ticketId = ticket.id;
+    }
+
     if (!ticketId) return;
 
     // 2. Adicionar tag IA_COBRANCA
@@ -674,6 +777,73 @@ export async function tagAndNoteTicket(phoneE164: string, stage: ReguaStage): Pr
   }
 }
 
+// ─── AUTO-FECHAR TICKET APÓS 10 MINUTOS ──────────────────────────────────────
+
+/**
+ * Fechar ticket no ZapContábil via API.
+ */
+async function closeZapTicket(ticketId: number): Promise<boolean> {
+  try {
+    await axios.put(
+      `${ZAP_API_URL}/api/ticket/${ticketId}`,
+      { status: 'closed' },
+      { headers: { Authorization: `Bearer ${ZAP_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 8000 }
+    );
+    console.log(`[Régua] 🔒 Ticket #${ticketId} fechado automaticamente (sem resposta do cliente)`);
+    return true;
+  } catch (error: any) {
+    console.warn(`[Régua] ⚠️ Erro ao fechar ticket #${ticketId}:`, error.message);
+    return false;
+  }
+}
+
+/**
+ * Verificar se cliente respondeu no ticket após `afterTimestamp`.
+ * Retorna true se houver mensagem inbound (fromMe=false) após o timestamp.
+ */
+async function clientRespondedAfter(ticketId: number, afterTimestamp: number): Promise<boolean> {
+  try {
+    const res = await axios.get(
+      `${ZAP_API_URL}/api/ticket/${ticketId}/messages`,
+      { headers: { Authorization: `Bearer ${ZAP_API_KEY}` }, timeout: 8000 }
+    );
+    const messages = res.data?.data || res.data?.messages || res.data || [];
+    const msgList = Array.isArray(messages) ? messages : [];
+    return msgList.some((m: any) => {
+      const isInbound = m.fromMe === false || m.from_me === false;
+      const msgTime = m.createdAt || m.created_at || m.timestamp;
+      const msgTs = msgTime ? new Date(msgTime).getTime() : 0;
+      return isInbound && msgTs > afterTimestamp;
+    });
+  } catch {
+    // Se não conseguir verificar, assume que não respondeu
+    return false;
+  }
+}
+
+/**
+ * Agendar fechamento automático do ticket após 10 minutos se cliente não responder.
+ */
+function scheduleTicketAutoClose(ticketId: number): void {
+  const sendTimestamp = Date.now();
+  const DELAY_MS = 10 * 60 * 1000; // 10 minutos
+
+  setTimeout(async () => {
+    try {
+      const responded = await clientRespondedAfter(ticketId, sendTimestamp);
+      if (responded) {
+        console.log(`[Régua] 💬 Cliente respondeu no ticket #${ticketId} — mantendo aberto`);
+      } else {
+        await closeZapTicket(ticketId);
+      }
+    } catch (err: any) {
+      console.warn(`[Régua] ⚠️ Erro no auto-close do ticket #${ticketId}:`, err.message);
+    }
+  }, DELAY_MS);
+
+  console.log(`[Régua] ⏱️ Auto-close agendado para ticket #${ticketId} em 10 minutos`);
+}
+
 // ─── OPT-OUT ─────────────────────────────────────────────────────────────────
 
 /**
@@ -737,7 +907,7 @@ export async function fetchReguaCandidates(limit?: number): Promise<ReguaCandida
          AND c.whatsappNumber IS NOT NULL
          AND c.whatsappNumber != ''
          AND c.optOut = 0
-         AND DATEDIFF(CURDATE(), DATE(r.dueDate)) >= -3
+         AND DATEDIFF(CURDATE(), DATE(r.dueDate)) >= 1
        ORDER BY
          -- Prioridade 1: mês atual com 1-7 dias de atraso (bucket B)
          CASE WHEN YEAR(r.dueDate) = YEAR(CURDATE())
@@ -1183,9 +1353,14 @@ export async function runRegua(dryRun: boolean = false, limit?: number): Promise
       result.sent++;
 
       // ── Tag + nota interna (assíncrono, não bloqueia) ──
-      tagAndNoteTicket(whatsappNumber, stage).catch(err =>
+      tagAndNoteTicket(whatsappNumber, stage, sendResult.ticketId).catch(err =>
         console.warn(`[Régua] ⚠️ Erro ao adicionar tag/nota:`, err.message)
       );
+
+      // ── Auto-fechar ticket após 10 min se cliente não responder ──
+      if (sendResult.ticketId) {
+        scheduleTicketAutoClose(sendResult.ticketId);
+      }
     } else {
       console.error(`[Régua] ❌ ERROR: clientId=${clientId} | stage=${stage} | error=${sendResult.error}`);
       const entry: ReguaAuditEntry = {

@@ -2,7 +2,6 @@ import { Router } from "express";
 import mysql from "mysql2/promise";
 import OpenAI from "openai";
 import { sendWhatsAppMessage } from "../zapContabilIntegration";
-import { sendNfseEmail } from "../emailService";
 import { promises as fs } from "fs";
 import { normalizePhoneToE164 } from "../phoneUtils";
 import { emitNfse } from "../services/nfseEmissionEngine";
@@ -18,8 +17,7 @@ const MODO_TESTE = false;
 
 // Mapeamento de empresas disponíveis para emissão
 const EMPRESAS_DISPONIVEIS = [
-  { configId: 1,     slug: "fraga",       label: "Fraga Contabilidade", cnpj: "07838084000186" },
-  { configId: 30001, slug: "r7geradores", label: "R7 Geradores",        cnpj: "21918918000194" },
+  { configId: 1, slug: "fraga", label: "Fraga Contabilidade", cnpj: "07838084000186" },
 ];
 
 // ── #7: Código de serviço por CNAE ──────────────────────────────────────────
@@ -28,14 +26,6 @@ function escolherCodigoServico(cnpjEmpresa: string, descricaoServico: string): s
   // Fraga Contabilidade → sempre 17.19.01 (Contabilidade, Anexo III, 2%)
   if (cnpjLimpo === "07838084000186") {
     return "17.19";
-  }
-  // R7 Geradores → locação/manutenção de equipamentos
-  if (cnpjLimpo === "21918918000194") {
-    const desc = descricaoServico.toLowerCase();
-    if (desc.includes("manuten") || desc.includes("reparo") || desc.includes("conserto")) {
-      return "14.01"; // Manutenção de máquinas e equipamentos
-    }
-    return "3.03"; // Locação de bens móveis (Anexo III)
   }
   // Regra geral: preferir Anexo III
   return "17.19";
@@ -98,15 +88,14 @@ function buildSystemPrompt(empresas: typeof EMPRESAS_DISPONIVEIS): string {
 Seu objetivo é coletar os dados necessários para emitir a NFS-e e responder APENAS com a mensagem para o cliente, sem explicações adicionais.
 
 === REGRAS IMPORTANTES ===
-⚠️ VALIDAÇÃO DE ASSUNTO:
-- Se a mensagem NÃO for sobre NOTA FISCAL, responda IMEDIATAMENTE: "📋 Este canal é exclusivo para emissão de NFS-e (Notas Fiscais de Serviço). Por favor, use outros canais para outras solicitações."
-- NUNCA desvie do assunto de emissão de Notas Fiscais
+- Se a mensagem NÃO for sobre emissão de nota fiscal, NÃO RESPONDA NADA. Retorne apenas string vazia sem nenhum texto.
+- NUNCA envie mensagens de rejeição, aviso ou redirecionamento ao cliente. Silêncio total para assuntos fora do escopo.
 
 Empresas que podem EMITIR a nota (prestadoras de serviço):
 ${listaEmpresas}
 
 Dados necessários (nesta ordem):
-1. Qual empresa vai EMITIR a nota (slug: "fraga" ou "r7geradores")
+1. Qual empresa vai EMITIR a nota (slug: "fraga")
 2. CPF ou CNPJ do tomador (quem RECEBE a nota / contratante) — apenas números
 3. Descrição do serviço prestado
 4. Valor do serviço (em reais) — apenas número
@@ -117,7 +106,7 @@ Quando você tiver coletado TODOS os 5 dados acima, responda com uma frase curta
 {"action":"emitir","empresa":"<slug>","cpf_cnpj":"<apenas_numeros>","descricao":"<descricao>","valor":<numero>,"email":"<email>"}
 
 REGRAS DO JSON:
-- empresa: usar exatamente o slug listado acima ("fraga" ou "r7geradores")
+- empresa: usar exatamente o slug listado acima ("fraga")
 - cpf_cnpj: apenas dígitos, sem pontos/traços/barras
 - valor: número sem aspas (ex: 500.00)
 - Não inclua nada após o JSON
@@ -200,33 +189,21 @@ async function sendNfseResult(
   email: string | undefined,
   empresaNome: string = "Fraga Contabilidade"
 ): Promise<void> {
-  // #1: Enviar email com PDF ou link
-  if (email && numeroNfse) {
-    console.log(`[SETOR-NF] 📧 Enviando email para ${email}...`);
-    const emailResult = await sendNfseEmail(
-      email,
-      clientName,
-      numeroNfse,
-      null, // pdfBuffer não disponível aqui
-      empresaNome,
-      pdfDownloadToken
-    );
-    if (emailResult.success) {
-      console.log(`[SETOR-NF] ✅ Email enviado com sucesso para ${email}`);
-    } else {
-      console.warn(`[SETOR-NF] ⚠️ Erro ao enviar email: ${emailResult.error}`);
-    }
-  }
+  // Email já enviado pelo motor de emissão com PDF anexado — não duplicar aqui.
 
-  // #2: Mensagem WhatsApp
+  // Mensagem WhatsApp
   let successMsg = `🎉 *Nota Fiscal emitida com sucesso!*\n\n`;
   if (numeroNfse) successMsg += `📋 *Número:* ${numeroNfse}\n`;
   if (email) successMsg += `📧 *Nota enviada para:* ${email}\n`;
 
   if (pdfDownloadToken) {
-    // #6: Link do próprio servidor (sem login)
     const serverUrl = process.env.APP_URL || "https://dashboard.fragacontabilidade.com.br";
     successMsg += `🔗 *Baixar PDF:* ${serverUrl}/api/nfse/pdf/${pdfDownloadToken}\n`;
+  }
+
+  // Link do portal da prefeitura para consulta
+  if (numeroNfse) {
+    successMsg += `\n🏛️ *Consulte no portal da prefeitura:*\nhttps://nfse.vilavelha.es.gov.br\n_(Informe o número ${numeroNfse} para localizar sua nota)_\n`;
   }
 
   successMsg += `\nQualquer dúvida, estamos à disposição! 😊`;
@@ -420,10 +397,14 @@ router.post("/webhook-message-setor", async (req, res) => {
         payload.ticket?.queue?.name || payload.queue?.name || "";
 
       console.log(
-        `[SETOR-NF] 💬 Mensagem | ticketId: ${ticketId} | setor: ${sectorName} | body: "${messageBody.substring(0, 60)}"`
+        `[SETOR-NF] 💬 Mensagem | ticketId: ${ticketId} | setor: ${sectorName || "(vazio)"} | body: "${messageBody.substring(0, 60)}"`
       );
 
-      if (!sectorName.toLowerCase().includes("nota fiscal")) {
+      // ⚠️  ZapContábil NÃO inclui queue.name em payloads de *mensagem*
+      // (só nos eventos de *ticket*). Só rejeita se o setor vier explícito
+      // e for diferente de "nota fiscal". Setor vazio → prosseguir e deixar
+      // o lookup do ticket validar se existe sessão ativa.
+      if (sectorName && !sectorName.toLowerCase().includes("nota fiscal")) {
         return res
           .status(200)
           .json({ success: false, reason: "Setor diferente de Nota Fiscal" });
@@ -640,13 +621,14 @@ router.post("/webhook-message-setor", async (req, res) => {
         // Criar registro de emissão com código de serviço
         const [insertEmissao] = await connection.execute(
           `INSERT INTO nfse_emissoes
-           (configId, tomadorNome, tomadorCpfCnpj, valor, competencia,
+           (configId, tomadorNome, tomadorCpfCnpj, tomadorEmail, valor, competencia,
             descricaoServico, codigoServico, status, solicitadoPor, solicitadoVia, whatsappPhone)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'pendente', 'nfse-robot', 'whatsapp', ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendente', 'nfse-robot', 'whatsapp', ?)`,
           [
             configId,
             ticket.client_name || clientName,
             emitirData.cpf_cnpj,
+            emailCliente || null,
             valorFinal,
             competencia,
             descricaoFinal,
@@ -750,6 +732,13 @@ router.post("/webhook-message-setor", async (req, res) => {
          WHERE id = ?`,
         [JSON.stringify(updatedHistory), messageBody, JSON.stringify(updatedProcessedIds), ticketId_db]
       );
+
+      // Nunca enviar resposta vazia — silêncio para mensagens fora do escopo
+      if (!claudeResponse.trim()) {
+        console.log(`[SETOR-NF] 🔇 Resposta vazia do AI — mensagem ignorada silenciosamente`);
+        await connection.end();
+        return res.status(200).json({ success: true, ticketId: ticketId_db, state: "ai_collecting", silent: true });
+      }
 
       await sendWhatsAppMessage({
         phone: phoneE164,

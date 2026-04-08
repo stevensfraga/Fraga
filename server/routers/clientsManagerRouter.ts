@@ -2,11 +2,14 @@
  * Gestão de Clientes — Router tRPC
  *
  * Endpoints:
- *   clientsManager.list       — lista paginada com busca
- *   clientsManager.stats      — contadores (total, ativos, optOut, inadimplentes)
- *   clientsManager.update     — editar campos do cliente
- *   clientsManager.toggleOptOut — marcar/desmarcar opt-out
- *   clientsManager.pauseBilling — pausar/retomar cobrança
+ *   clientsManager.list           — lista paginada com busca (nome, CNPJ, email, telefone)
+ *   clientsManager.stats          — contadores
+ *   clientsManager.update         — editar campos
+ *   clientsManager.toggleOptOut   — opt-out
+ *   clientsManager.pauseBilling   — pausar cobrança
+ *   clientsManager.findDuplicates — duplicatas de um cliente específico
+ *   clientsManager.listDuplicates — todos os pares duplicados (mesmo CNPJ ou nome similar)
+ *   clientsManager.merge          — mesclar dois clientes (deleta o secundário)
  */
 
 import { z } from "zod";
@@ -41,9 +44,12 @@ export const clientsManagerRouter = router({
       const params: any[] = [];
 
       if (input.search) {
-        conditions.push("(c.name LIKE ? OR c.document LIKE ? OR c.email LIKE ?)");
+        // Busca por nome, CNPJ, email ou qualquer campo de telefone
+        conditions.push(
+          "(c.name LIKE ? OR c.document LIKE ? OR c.email LIKE ? OR c.whatsappNumber LIKE ? OR c.phone LIKE ? OR c.phoneCellular LIKE ?)"
+        );
         const like = `%${input.search}%`;
-        params.push(like, like, like);
+        params.push(like, like, like, like, like, like);
       }
       if (input.status) {
         conditions.push("c.status = ?");
@@ -63,14 +69,12 @@ export const clientsManagerRouter = router({
         selectOverdue = ", ov.totalDebt, ov.openCount";
       }
 
-      // Count
       const [countRow] = await rawQuery(
         `SELECT COUNT(*) AS total FROM clients c ${joinOverdue} ${where}`,
         params
       );
       const total = Number(countRow?.total ?? 0);
 
-      // Data
       const rows = await rawQuery(
         `SELECT c.id, c.contaAzulId, c.name, c.document, c.email,
                 c.phone, c.phoneCellular, c.whatsappNumber, c.whatsappSource,
@@ -144,7 +148,7 @@ export const clientsManagerRouter = router({
       z.object({
         id: z.number().int().positive(),
         name: z.string().min(1).optional(),
-        email: z.string().email().optional(),
+        email: z.string().email().optional().or(z.literal("")).transform(v => v === "" ? undefined : v),
         phone: z.string().optional(),
         phoneCellular: z.string().optional(),
         whatsappNumber: z.string().optional(),
@@ -160,7 +164,7 @@ export const clientsManagerRouter = router({
       for (const [key, value] of Object.entries(fields)) {
         if (value !== undefined) {
           sets.push(`${key} = ?`);
-          params.push(value);
+          params.push(value === "" ? null : value);
         }
       }
 
@@ -169,7 +173,6 @@ export const clientsManagerRouter = router({
       params.push(id);
       await rawQuery(`UPDATE clients SET ${sets.join(", ")} WHERE id = ?`, params);
 
-      // Audit
       await rawQuery(
         `INSERT INTO client_change_audit (clientId, action, afterJson, userId, userName)
          VALUES (?, 'update', ?, ?, ?)`,
@@ -204,7 +207,7 @@ export const clientsManagerRouter = router({
     .input(
       z.object({
         id: z.number().int().positive(),
-        until: z.string().datetime().nullable(), // ISO date or null to unpause
+        until: z.string().datetime().nullable(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -219,6 +222,161 @@ export const clientsManagerRouter = router({
         [input.id, JSON.stringify({ billingPausedUntil: input.until }),
          ctx.user?.id ?? null, ctx.user?.name ?? "system"]
       );
+
+      return { success: true };
+    }),
+
+  // ── Duplicatas de um cliente específico ─────────────────────────────────
+  findDuplicates: publicProcedure
+    .input(z.object({ clientId: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const [client] = await rawQuery(
+        "SELECT id, name, document, whatsappNumber FROM clients WHERE id = ?",
+        [input.clientId]
+      );
+      if (!client) return { duplicates: [] };
+
+      const nameParts = (client.name as string).split(/\s+/).slice(0, 3).join(" ");
+
+      const candidates = await rawQuery(
+        `SELECT c.id, c.name, c.document, c.email, c.whatsappNumber, c.status,
+                COUNT(r.id) AS receivableCount
+         FROM clients c
+         LEFT JOIN receivables r ON r.clientId = c.id
+         WHERE c.id != ?
+           AND c.status != 'inactive'
+           AND (
+             c.name LIKE ?
+             OR (c.document IS NOT NULL AND c.document != '' AND c.document = ?)
+             OR (c.whatsappNumber IS NOT NULL AND c.whatsappNumber = ?)
+           )
+         GROUP BY c.id
+         LIMIT 5`,
+        [
+          input.clientId,
+          `%${nameParts.substring(0, 12)}%`,
+          client.document ?? "__no_match__",
+          client.whatsappNumber ?? "__no_match__",
+        ]
+      );
+
+      return {
+        duplicates: candidates.map((r: any) => ({
+          id: r.id,
+          name: r.name,
+          document: r.document,
+          email: r.email,
+          whatsappNumber: r.whatsappNumber,
+          status: r.status,
+          receivableCount: Number(r.receivableCount),
+        })),
+      };
+    }),
+
+  // ── Listar todos os pares duplicados ─────────────────────────────────────
+  listDuplicates: publicProcedure.query(async () => {
+    const pairs = await rawQuery<any>(
+      `SELECT
+        a.id          AS a_id,
+        a.name        AS a_name,
+        a.document    AS a_doc,
+        a.email       AS a_email,
+        a.whatsappNumber AS a_wn,
+        a.phone       AS a_phone,
+        b.id          AS b_id,
+        b.name        AS b_name,
+        b.document    AS b_doc,
+        b.email       AS b_email,
+        b.whatsappNumber AS b_wn,
+        b.phone       AS b_phone,
+        CASE
+          WHEN a.document IS NOT NULL AND a.document != '' AND a.document = b.document
+            THEN 'cnpj'
+          ELSE 'nome'
+        END AS reason,
+        (SELECT COUNT(*) FROM receivables WHERE clientId = a.id) AS a_recCount,
+        (SELECT COUNT(*) FROM receivables WHERE clientId = b.id) AS b_recCount
+       FROM clients a
+       JOIN clients b ON a.id < b.id
+       WHERE a.status != 'inactive' AND b.status != 'inactive'
+         AND (
+           (a.document IS NOT NULL AND a.document != '' AND a.document = b.document)
+           OR SUBSTRING_INDEX(LOWER(TRIM(a.name)), ' ', 2) = SUBSTRING_INDEX(LOWER(TRIM(b.name)), ' ', 2)
+         )
+       ORDER BY reason ASC, a.document, a.name
+       LIMIT 100`
+    );
+
+    return {
+      pairs: pairs.map((r: any) => ({
+        reason: r.reason as "cnpj" | "nome",
+        a: {
+          id: r.a_id, name: r.a_name, document: r.a_doc, email: r.a_email,
+          whatsappNumber: r.a_wn, phone: r.a_phone, receivableCount: Number(r.a_recCount),
+        },
+        b: {
+          id: r.b_id, name: r.b_name, document: r.b_doc, email: r.b_email,
+          whatsappNumber: r.b_wn, phone: r.b_phone, receivableCount: Number(r.b_recCount),
+        },
+      })),
+    };
+  }),
+
+  // ── Mesclar dois clientes ────────────────────────────────────────────────
+  merge: protectedProcedure
+    .input(
+      z.object({
+        primaryId: z.number().int().positive(),
+        secondaryId: z.number().int().positive(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { primaryId, secondaryId } = input;
+      if (primaryId === secondaryId) throw new Error("IDs devem ser diferentes");
+
+      const [primary] = await rawQuery("SELECT * FROM clients WHERE id = ?", [primaryId]);
+      const [secondary] = await rawQuery("SELECT * FROM clients WHERE id = ?", [secondaryId]);
+      if (!primary || !secondary) throw new Error("Cliente não encontrado");
+
+      // 1. Mover dados para o principal
+      await rawQuery("UPDATE receivables SET clientId = ? WHERE clientId = ?", [primaryId, secondaryId]);
+      await rawQuery("UPDATE collectionSchedule SET clientId = ? WHERE clientId = ?", [primaryId, secondaryId]);
+      await rawQuery("UPDATE client_contacts SET clientId = ? WHERE clientId = ?", [primaryId, secondaryId]);
+      await rawQuery("UPDATE collectionMessages SET clientId = ? WHERE clientId = ?", [primaryId, secondaryId]).catch(() => {});
+      await rawQuery("UPDATE regua_audit SET clientId = ? WHERE clientId = ?", [primaryId, secondaryId]).catch(() => {});
+      await rawQuery("UPDATE legalCases SET clientId = ? WHERE clientId = ?", [primaryId, secondaryId]).catch(() => {});
+
+      // 2. Preencher campos nulos do principal com dados do secundário
+      const fieldsToMerge = ["document", "email", "phone", "phoneCellular", "whatsappNumber", "cnae"] as const;
+      for (const field of fieldsToMerge) {
+        if (!primary[field] && secondary[field]) {
+          await rawQuery(`UPDATE clients SET \`${field}\` = ? WHERE id = ?`, [secondary[field], primaryId]);
+        }
+      }
+
+      // 3. Audit antes de deletar
+      await rawQuery(
+        `INSERT INTO client_change_audit (clientId, action, beforeJson, afterJson, userId, userName)
+         VALUES (?, 'merge', ?, ?, ?, ?)`,
+        [
+          primaryId,
+          JSON.stringify({ secondaryId, secondaryName: secondary.name }),
+          JSON.stringify({ merged: true, primaryId }),
+          ctx.user?.id ?? null,
+          ctx.user?.name ?? "system",
+        ]
+      );
+
+      // 4. Deletar o secundário (ou marcar inativo se FK impedir)
+      try {
+        await rawQuery("DELETE FROM client_change_audit WHERE clientId = ?", [secondaryId]);
+        await rawQuery("DELETE FROM clients WHERE id = ?", [secondaryId]);
+      } catch {
+        await rawQuery(
+          "UPDATE clients SET status = 'inactive', name = CONCAT('[MESCLADO] ', name) WHERE id = ?",
+          [secondaryId]
+        );
+      }
 
       return { success: true };
     }),

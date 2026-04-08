@@ -9,7 +9,7 @@ import mysql from "mysql2/promise";
 const router = express.Router();
 
 // Diretório local para salvar PDFs
-const PDF_DIR = "/opt/fraga-dashboard/data/nfse-pdfs";
+const PDF_DIR = "/opt/fraga-dashboard/uploads/nfse";
 
 /**
  * POST /api/nfse/process
@@ -172,7 +172,7 @@ export function savePdfLocally(
   if (!fs.existsSync(PDF_DIR)) {
     fs.mkdirSync(PDF_DIR, { recursive: true });
   }
-  const fileName = `NFS-${numeroNf}-${cnpj}.pdf`;
+  const fileName = `NFS-e-${numeroNf}.pdf`;
   const filePath = path.join(PDF_DIR, fileName);
   fs.writeFileSync(filePath, pdfBuffer);
   console.log(`[NfseEmissionWebhook] PDF salvo localmente: ${filePath} (${pdfBuffer.length} bytes)`);

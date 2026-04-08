@@ -14,7 +14,7 @@
  *   CAPTCHA_FAIL → (fallback para sessão persistente)
  */
 
-import { invokeLLM } from "../_core/llm";
+import Anthropic from "@anthropic-ai/sdk";
 import { Solver } from "2captcha";
 
 /**
@@ -83,58 +83,57 @@ async function captureCaptchaImage(page: any): Promise<{ base64: string; mimeTyp
 }
 
 /**
- * Envia imagem do CAPTCHA para LLM Vision e retorna o texto extraído.
- * Usa prompt específico para CAPTCHA de texto distorcido.
+ * Envia imagem do CAPTCHA para Claude Haiku (Anthropic) e retorna o texto extraído.
+ * Usa visão nativa do Claude — mais preciso que DeepSeek para OCR de CAPTCHA.
+ * Fallback quando 2captcha não consegue resolver.
  */
-async function solveCaptchaWithLLM(base64Image: string, mimeType: string): Promise<string | null> {
+async function solveCaptchaWithClaudeVision(base64Image: string, mimeType: string): Promise<string | null> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    console.warn("[CaptchaSolver] ANTHROPIC_API_KEY não configurada — pulando Claude Vision");
+    return null;
+  }
   try {
-    const response = await invokeLLM({
+    const client = new Anthropic({ apiKey, timeout: 20_000 });
+    const response = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 64,
       messages: [
-        {
-          role: "system",
-          content:
-            "You are a CAPTCHA OCR specialist. " +
-            "Your task is to read the exact text from CAPTCHA images. " +
-            "CRITICAL RULES:\n" +
-            "1. The CAPTCHA is CASE-SENSITIVE - preserve exact case (lowercase vs uppercase)\n" +
-            "2. Return ONLY the characters you see, no spaces, no explanations\n" +
-            "3. Pay careful attention to similar characters: 0 vs O, 1 vs l vs I, d vs q vs b, n vs m, u vs v\n" +
-            "4. The text is usually 4-7 alphanumeric characters\n" +
-            "5. IMPORTANT: Read ALL characters including those at the very beginning and end of the image — do NOT skip the first or last character\n" +
-            "6. The image may have strikethrough lines or noise — ignore them and focus on the actual characters\n" +
-            "7. Return ONLY the raw text string, nothing else",
-        },
         {
           role: "user",
           content: [
             {
-              type: "image_url",
-              image_url: {
-                url: `data:${mimeType};base64,${base64Image}`,
-                detail: "high",
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: mimeType as "image/png" | "image/jpeg" | "image/gif" | "image/webp",
+                data: base64Image,
               },
             },
             {
               type: "text",
-              text: "Read ALL characters in this CAPTCHA image from left to right. Include the FIRST character (do not skip it). Return ONLY the characters, preserving exact case. No spaces, no explanations.",
+              text:
+                "This is a CAPTCHA image. Read ALL characters from left to right. " +
+                "CAPTCHA is CASE-SENSITIVE. Return ONLY the characters, no spaces, no explanations. " +
+                "Pay attention to similar chars: 0 vs O, 1 vs l vs I. " +
+                "Include the FIRST and LAST characters. Return only the raw text.",
             },
           ],
         },
       ],
     });
 
-    const rawContent = response?.choices?.[0]?.message?.content;
-    const content = typeof rawContent === "string" ? rawContent : "";
-    // Limpar resposta: remover espaços, aspas, pontuação extra
+    const content = response.content?.[0]?.type === "text" ? response.content[0].text : "";
     const cleaned = content
       .trim()
-      .replace(/['"]/g, "")
+      .replace(/['"`.]/g, "")
       .replace(/\s+/g, "")
-      .substring(0, 20); // Máximo 20 chars para segurança
+      .substring(0, 20);
 
+    console.log(`[CaptchaSolver] Claude Vision resolveu: "${cleaned}"`);
     return cleaned || null;
   } catch (err: any) {
-    console.warn("[CaptchaSolver] Erro ao chamar LLM Vision:", err.message);
+    console.warn("[CaptchaSolver] Erro ao chamar Claude Vision:", err.message);
     return null;
   }
 }
@@ -216,14 +215,14 @@ export async function solveCaptchaAndLogin(
 
       log("CAPTCHA_SENT_TO_LLM", "OK", { attempt: attempts, imageSize: captchaImage.base64.length });
 
-      // 3. Resolver CAPTCHA: tenta 2captcha primeiro, fallback para LLM Vision
+      // 3. Resolver CAPTCHA: tenta 2captcha primeiro, fallback para DeepSeek Vision
       let captchaText: string | null = null;
       let captchaMethod = "2captcha";
 
       captchaText = await solveCaptchaWith2captcha(captchaImage.base64);
       if (!captchaText) {
-        captchaMethod = "llm_vision";
-        captchaText = await solveCaptchaWithLLM(captchaImage.base64, captchaImage.mimeType);
+        captchaMethod = "claude_vision";
+        captchaText = await solveCaptchaWithClaudeVision(captchaImage.base64, captchaImage.mimeType);
       }
 
       if (!captchaText) {

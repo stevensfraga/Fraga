@@ -33,14 +33,16 @@ interface AcessoriasContact {
 }
 
 const API_BASE_URL = "https://api.acessorias.com";
-const API_TOKEN = "T5c45793e1cc9f0d31c3caaddac173b99c"; // Token do usuário stevens@fragacontabilidade.com.br
 
 /**
- * Retorna o token da API (usando Bearer token em vez de autenticação por email/senha)
+ * Retorna o token da API lido da variável de ambiente ACESSORIAS_API_TOKEN
  */
 export async function getAcessoriasToken(): Promise<string> {
-  // Token é estático, não precisa autenticar
-  return API_TOKEN;
+  const token = ENV.acessoriasApiToken;
+  if (!token) {
+    throw new Error("ACESSORIAS_API_TOKEN não configurado");
+  }
+  return token;
 }
 
 /**

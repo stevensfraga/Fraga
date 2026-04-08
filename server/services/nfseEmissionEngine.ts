@@ -386,47 +386,87 @@ export async function emitNfse(emissaoId: number): Promise<EmissaoResult> {
       const serieNfse = abrasfResult.serieNfse || "1";
       const codigoVerificacao = abrasfResult.codigoVerificacao;
 
-      // Gerar PDF com os dados da nota
       let pdfUrl: string | undefined;
       let pdfLocalPath: string | undefined;
       let pdfBuffer: Buffer | undefined;
       let pdfDownloadToken: string | undefined;
-      try {
-        pdfBuffer = await gerarPdfNota({
-          numeroNfse,
-          serieNfse,
-          codigoVerificacao,
-          dataEmissao: abrasfResult.dataEmissao,
-          prestadorRazaoSocial: cfg.razaoSocial,
-          prestadorCnpj: cfg.cnpj,
-          prestadorIm: cfg.inscricaoMunicipal || "",
-          prestadorMunicipio: cfg.municipio || "Vila Velha",
-          prestadorUf: cfg.uf || "ES",
-          tomadorNome: abrasfDados.tomadorNome,
-          tomadorCpfCnpj: abrasfDados.tomadorCpfCnpj,
-          tomadorEmail: abrasfDados.tomadorEmail,
-          descricaoServico: abrasfDados.descricaoServico,
-          codigoServico: abrasfDados.codigoServico,
-          competencia: em.competencia,
-          valorServicos: Number(em.valor),
-          aliquotaIss: 0.02,
-          valorIss: Number(em.valor) * 0.02,
-          issRetido: abrasfDados.issRetido,
-          valorLiquido: abrasfDados.issRetido ? Number(em.valor) * 0.98 : Number(em.valor),
-        });
-        log("ABRASF_PDF_GENERATED", "OK", { bytes: pdfBuffer.length });
 
-        // Salvar PDF localmente
+      // Tentar baixar PDF oficial do portal via Playwright (sessão salva)
+      // O PDF oficial contém selo, QR code e assinatura digital da prefeitura
+      if (cfg.portal_id) {
         try {
-          const { path: savedPath, token } = await savePdfLocally(pdfBuffer, emissaoId, numeroNfse);
+          const pwt = await import("playwright-core");
+          browser = await pwt.chromium.launch(await getChromiumLaunchOptions());
+          const pdfCtx = await browser.newContext({
+            viewport: { width: 1280, height: 900 },
+            locale: "pt-BR",
+            timezoneId: "America/Sao_Paulo",
+          });
+          page = await pdfCtx.newPage();
+          const savedState = await loadStorageState(cfg.portal_id);
+          if (savedState) {
+            await applyStorageState(pdfCtx, savedState);
+          }
+          await safeGoto(page, VILAVELHA_SELECTORS.urls.login, {
+            timeout: 30000,
+            fallbackUrl: VILAVELHA_SELECTORS.urls.controle,
+            logFn: log,
+          });
+          const downloaded = await downloadNfsePdf(page, numeroNfse, emissaoId, logs);
+          if (downloaded) {
+            pdfBuffer = downloaded;
+            log("ABRASF_OFFICIAL_PDF", "OK", { bytes: pdfBuffer.length });
+          }
+          await browser.close();
+          browser = null;
+          page = null;
+        } catch (pwtErr: any) {
+          log("ABRASF_PLAYWRIGHT_PDF", "WARN", { error: pwtErr.message });
+          if (browser) { try { await browser.close(); } catch {} browser = null; page = null; }
+        }
+      }
+
+      // Fallback: PDF sintético se download oficial falhou ou não havia sessão
+      if (!pdfBuffer) {
+        try {
+          pdfBuffer = await gerarPdfNota({
+            numeroNfse,
+            serieNfse,
+            codigoVerificacao,
+            dataEmissao: abrasfResult.dataEmissao,
+            prestadorRazaoSocial: cfg.razaoSocial,
+            prestadorCnpj: cfg.cnpj,
+            prestadorIm: cfg.inscricaoMunicipal || "",
+            prestadorMunicipio: cfg.municipio || "Vila Velha",
+            prestadorUf: cfg.uf || "ES",
+            tomadorNome: abrasfDados.tomadorNome,
+            tomadorCpfCnpj: abrasfDados.tomadorCpfCnpj,
+            tomadorEmail: abrasfDados.tomadorEmail,
+            descricaoServico: abrasfDados.descricaoServico,
+            codigoServico: abrasfDados.codigoServico,
+            competencia: em.competencia,
+            valorServicos: Number(em.valor),
+            aliquotaIss: 0.02,
+            valorIss: Number(em.valor) * 0.02,
+            issRetido: abrasfDados.issRetido,
+            valorLiquido: abrasfDados.issRetido ? Number(em.valor) * 0.98 : Number(em.valor),
+          });
+          log("ABRASF_PDF_GENERATED", "OK", { bytes: pdfBuffer.length });
+        } catch (pdfErr: any) {
+          log("ABRASF_PDF_ERROR", "WARN", { error: pdfErr.message });
+        }
+      }
+
+      // Salvar e fazer upload do PDF (oficial ou sintético)
+      if (pdfBuffer) {
+        try {
+          const savedPath = savePdfLocally(pdfBuffer, emissaoId, numeroNfse, cfg.cnpj);
           pdfLocalPath = savedPath;
-          pdfDownloadToken = token;
+          pdfDownloadToken = await generatePdfToken(emissaoId, numeroNfse, savedPath);
           log("ABRASF_PDF_SAVED", "OK", { path: savedPath });
         } catch (saveErr: any) {
           log("ABRASF_PDF_SAVE", "WARN", { error: saveErr.message });
         }
-
-        // Upload para S3
         try {
           const suffix = Math.random().toString(36).substring(2, 8);
           const fileKey = `nfse-pdfs/${cfg.cnpj}/${emissaoId}-nfse-${numeroNfse}-${suffix}.pdf`;
@@ -436,8 +476,6 @@ export async function emitNfse(emissaoId: number): Promise<EmissaoResult> {
         } catch (s3Err: any) {
           log("ABRASF_PDF_S3", "WARN", { error: s3Err.message });
         }
-      } catch (pdfErr: any) {
-        log("ABRASF_PDF_ERROR", "WARN", { error: pdfErr.message });
       }
 
       const baseUrl = process.env.APP_BASE_URL || "https://dashboard.fragacontabilidade.com.br";
@@ -453,7 +491,7 @@ export async function emitNfse(emissaoId: number): Promise<EmissaoResult> {
 
       // Enviar email com PDF ao tomador
       const tomadorEmailFinal = tomadorData?.email || em.tomadorEmail || null;
-      if (tomadorEmailFinal && pdfBuffer) {
+      if (tomadorEmailFinal) {
         try {
           const { sendNfseEmail } = await import("../emailService");
           const emailResult = await sendNfseEmail(
@@ -669,8 +707,9 @@ export async function emitNfse(emissaoId: number): Promise<EmissaoResult> {
     let pdfUrl: string | undefined;
     let pdfLocalPath: string | undefined;
     let pdfDownloadToken: string | undefined;
+    let pdfBuffer: Buffer | null = null;
     try {
-      const pdfBuffer = await downloadNfsePdf(page, numeroNfse, emissaoId, logs);
+      pdfBuffer = await downloadNfsePdf(page, numeroNfse, emissaoId, logs);
       if (pdfBuffer) {
         // Opção A: Salvar localmente no servidor (acesso sem login via token de 24h)
         try {
@@ -694,6 +733,52 @@ export async function emitNfse(emissaoId: number): Promise<EmissaoResult> {
     } catch (pdfErr: any) {
       log("PDF_DOWNLOAD", "WARN", { error: pdfErr.message });
     }
+
+    // Fallback: se o portal não devolveu PDF, gerar via pdf-lib com os dados disponíveis
+    if (!pdfBuffer) {
+      try {
+        const aliquota = cfg.aliquotaIss ? Number(cfg.aliquotaIss) : 0.02;
+        pdfBuffer = await gerarPdfNota({
+          numeroNfse,
+          serieNfse: serieNfse || "1",
+          dataEmissao: new Date().toISOString(),
+          prestadorRazaoSocial: cfg.razaoSocial || "",
+          prestadorCnpj: cfg.cnpj || "",
+          prestadorIm: cfg.inscricaoMunicipal || "",
+          prestadorMunicipio: cfg.municipio || "Vila Velha",
+          prestadorUf: cfg.uf || "ES",
+          tomadorNome: tomadorData?.nomeRazaoSocial || tomadorData?.nome || em.tomadorNome || "",
+          tomadorCpfCnpj: tomadorData?.cpfCnpj || em.tomadorCpfCnpj || "",
+          tomadorEmail: tomadorData?.email || em.tomadorEmail || undefined,
+          descricaoServico: em.descricaoServico || cfg.descricaoPadrao || "Serviços contábeis",
+          codigoServico: em.codigoServico || cfg.listaServico || "17.01",
+          competencia: em.competencia || "",
+          valorServicos: Number(em.valor),
+          aliquotaIss: aliquota,
+          valorIss: Number(em.valor) * aliquota,
+          issRetido: cfg.issRetido === 1,
+          valorLiquido: cfg.issRetido === 1 ? Number(em.valor) * (1 - aliquota) : Number(em.valor),
+        });
+        log("PDF_FALLBACK_GENERATED", "OK", { bytes: pdfBuffer.length, note: "gerado via pdf-lib (portal falhou)" });
+        try {
+          pdfLocalPath = savePdfLocally(pdfBuffer, emissaoId, numeroNfse, cfg.cnpj);
+          pdfDownloadToken = await generatePdfToken(emissaoId, numeroNfse, pdfLocalPath);
+        } catch (saveErr: any) {
+          log("PDF_FALLBACK_SAVE", "WARN", { error: saveErr.message });
+        }
+        try {
+          const suffix = Math.random().toString(36).substring(2, 8);
+          const fileKey = `nfse-pdfs/${cfg.cnpj}/${emissaoId}-nfse-${numeroNfse}-${suffix}.pdf`;
+          const { url } = await storagePut(fileKey, pdfBuffer, "application/pdf");
+          pdfUrl = url;
+        } catch (s3Err: any) {
+          log("PDF_FALLBACK_S3", "WARN", { error: s3Err.message });
+        }
+      } catch (fallbackErr: any) {
+        log("PDF_FALLBACK_ERROR", "WARN", { error: fallbackErr.message });
+      }
+    }
+
     // Gerar URL de download sem login (token temporário de 24h)
     const baseUrl = process.env.APP_BASE_URL || "https://dashboard.fragacontabilidade.com.br";
     const pdfTokenUrl = pdfDownloadToken
@@ -720,7 +805,7 @@ export async function emitNfse(emissaoId: number): Promise<EmissaoResult> {
           tomadorEmail,
           em.tomadorNome || "Cliente",
           numeroNfse,
-          null, // PDF não anexado — link do portal PMVV incluído no email
+          pdfBuffer, // PDF anexado se o download do portal foi bem-sucedido
           cfg.razaoSocial || "Fraga Contabilidade",
           pdfDownloadToken
         );
@@ -1237,6 +1322,69 @@ async function fillNfseForm(
         }
       } catch (e: any) {
         log("TOMADOR_CIDADE_FILL", "WARN", { error: e.message });
+      }
+
+      // Garantir campo IBGE oculto do tomador está preenchido.
+      // jpsuggest só preenche o campo qdcidade via seleção do dropdown.
+      // Se não foi preenchido, tentar via jQuery re-trigger + mapa estático de cidades ES.
+      try {
+        const ibgeTomador = await page.evaluate(() =>
+          (document.getElementById('qdcidade') as HTMLInputElement | null)?.value || ''
+        );
+        if (!ibgeTomador && data.tomadorCidade) {
+          // Tentar disparar jpsuggest via jQuery para popular o campo oculto
+          await page.evaluate((cidade: string) => {
+            const jq = (window as any).jQuery || (window as any).$;
+            const input = document.getElementById('qycidade') as HTMLInputElement | null;
+            if (jq && input) {
+              jq(input).val(cidade).trigger('keyup');
+            }
+          }, data.tomadorCidade);
+          await page.waitForTimeout(1500);
+          // Clicar no primeiro item da sugestão se aparecer
+          const sug = page.locator(`li:has-text("${data.tomadorCidade.split(' ')[0]}")`).first();
+          if (await sug.isVisible({ timeout: 1500 }).catch(() => false)) {
+            await sug.click();
+            await page.waitForTimeout(500);
+          }
+          // Verificar novamente
+          const ibgeTomador2 = await page.evaluate(() =>
+            (document.getElementById('qdcidade') as HTMLInputElement | null)?.value || ''
+          );
+          if (ibgeTomador2) {
+            log('TOMADOR_IBGE_INJECT', 'OK', { code: ibgeTomador2, source: 'jpsuggest_retrigger' });
+          } else {
+            // Mapa estático de cidades ES mais comuns
+            const ibgeMap: Record<string, string> = {
+              'vila velha': '3205309',
+              'vitoria': '3205010',
+              'vitória': '3205010',
+              'cariacica': '3201308',
+              'serra': '3204559',
+              'guarapari': '3202405',
+              'viana': '3205200',
+              'cachoeiro de itapemirim': '3201209',
+              'colatina': '3201506',
+              'linhares': '3203205',
+            };
+            const cityKey = (data.tomadorCidade || '').toLowerCase()
+              .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const code = ibgeMap[cityKey] || ibgeMap[data.tomadorCidade.toLowerCase()] || null;
+            if (code) {
+              await page.evaluate((c: string) => {
+                const h = document.getElementById('qdcidade') as HTMLInputElement | null;
+                if (h) { h.value = c; h.dispatchEvent(new Event('change', { bubbles: true })); }
+              }, code);
+              log('TOMADOR_IBGE_INJECT', 'OK', { code, city: data.tomadorCidade, source: 'static_map' });
+            } else {
+              log('TOMADOR_IBGE_INJECT', 'WARN', { city: data.tomadorCidade, note: 'Cidade não encontrada no mapa estático' });
+            }
+          }
+        } else if (ibgeTomador) {
+          log('TOMADOR_IBGE_OK', 'OK', { code: ibgeTomador, note: 'jpsuggest preencheu automaticamente' });
+        }
+      } catch (ibgeErr: any) {
+        log('TOMADOR_IBGE_INJECT', 'WARN', { error: ibgeErr.message });
       }
     }
     if (data.tomadorEstado) {
@@ -1789,6 +1937,21 @@ async function fillNfseForm(
         method: municipioMethod,
       });
 
+      // Garantir campo IBGE oculto do município de prestação está preenchido.
+      // jpsuggest só preenche via seleção do dropdown — tab_fallback não dispara o callback.
+      // Vila Velha ES = 3205309 (código IBGE fixo para este portal)
+      await page.evaluate(() => {
+        const hid = document.getElementById('qdservicocidade') as HTMLInputElement | null;
+        if (hid && !hid.value) {
+          hid.value = '3205309';
+          hid.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }).catch(() => {});
+      const ibgeMunicipioVal = await page.evaluate(() =>
+        (document.getElementById('qdservicocidade') as HTMLInputElement | null)?.value || ''
+      ).catch(() => '');
+      log('MUNICIPIO_IBGE_INJECT', ibgeMunicipioVal ? 'OK' : 'WARN', { code: ibgeMunicipioVal || '3205309', field: 'qdservicocidade' });
+
       // Preencher estado (ES) via JS direto — campo simples, não é jpsuggest
       const estadoFilled = await page.evaluate(() => {
         const el = document.getElementById('qyservicoestado') as HTMLInputElement | null;
@@ -2290,19 +2453,8 @@ async function submitAndGetNumber(
 
     if (successResult.found) {
       log('SUBMIT_SUCCESS_MODAL', 'OK', successResult);
-      // Fechar o modal de sucesso
-      await page.evaluate(() => {
-        const buttons = Array.from(document.querySelectorAll('button'));
-        for (const btn of buttons) {
-          const text = btn.textContent?.trim() || '';
-          if (text === 'Fechar' || text === 'OK' || text === 'Ok') {
-            (btn as HTMLButtonElement).click();
-            return;
-          }
-        }
-      }).catch(() => {});
-      await page.waitForTimeout(500).catch(() => {});
-      // Retornar o número da nota do modal de sucesso
+      // NÃO fechar o modal aqui — downloadNfsePdf() precisa clicar button#_imagebutton7
+      // antes de fechar. O modal será fechado dentro de downloadNfsePdf().
       if (successResult.numeroNfse) {
         log('SUBMIT', 'OK', { numeroNfse: successResult.numeroNfse, source: 'success_modal' });
         return { numeroNfse: successResult.numeroNfse };
@@ -2384,61 +2536,112 @@ async function downloadNfsePdf(
   };
 
   try {
-    // ESTRATÉGIA 1: Tentar clicar no link de PDF na página atual (após modal de sucesso)
-    const pdfLinkEl = await trySelectors(page, [VILAVELHA_SELECTORS.resultado.btnDownloadPdf]);
+    // ESTRATÉGIA 1: button#_imagebutton7 no modal de resultado (ainda aberto após submitAndGetNumber)
+    log("STRATEGY1_START", "OK", { note: "Buscando button#_imagebutton7 no modal de resultado" });
+    try {
+      const btn7 = await page.waitForSelector(
+        "button#_imagebutton7",
+        { timeout: 8000, state: "visible" }
+      ).catch(() => null);
 
-    if (pdfLinkEl) {
-      log("LINK_FOUND", "OK", { method: "current_page" });
-      // Interceptar download
-      const [download] = await Promise.all([
-        page.waitForEvent("download", { timeout: 30000 }).catch(() => null),
-        pdfLinkEl.click(),
-      ]);
-
-      if (download) {
-        const stream = await download.createReadStream();
-        const chunks: Buffer[] = [];
-        await new Promise<void>((resolve, reject) => {
-          stream.on("data", (chunk: Buffer) => chunks.push(chunk));
-          stream.on("end", resolve);
-          stream.on("error", reject);
-        });
-        const buffer = Buffer.concat(chunks);
-        log("DOWNLOAD", "OK", { bytes: buffer.length, method: "download_event" });
-        return buffer;
-      }
-
-      // Tentar via href
-      const href = await pdfLinkEl.getAttribute("href").catch(() => null);
-      if (href) {
-        const pdfUrl = href.startsWith("http") ? href : `https://tributacao.vilavelha.es.gov.br${href}`;
-        const response = await page.request.get(pdfUrl);
-        if (response.ok()) {
-          const buffer = Buffer.from(await response.body());
-          log("DOWNLOAD", "OK", { bytes: buffer.length, method: "href_fetch" });
+      if (btn7) {
+        log("BTN7_FOUND", "OK", { method: "modal_result" });
+        const [download] = await Promise.all([
+          page.waitForEvent("download", { timeout: 30000 }).catch(() => null),
+          btn7.click(),
+        ]);
+        if (download) {
+          const stream = await download.createReadStream();
+          const chunks: Buffer[] = [];
+          await new Promise<void>((resolve, reject) => {
+            stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+            stream.on("end", resolve);
+            stream.on("error", reject);
+          });
+          const buffer = Buffer.concat(chunks);
+          log("DOWNLOAD", "OK", { bytes: buffer.length, method: "btn7_modal" });
           return buffer;
         }
+        log("BTN7_NO_DOWNLOAD", "WARN", { note: "Clicou button#_imagebutton7 mas sem evento de download" });
+      } else {
+        log("BTN7_NOT_FOUND", "WARN", { note: "button#_imagebutton7 nao encontrado no modal de resultado" });
       }
+    } catch (s1Err: any) {
+      log("STRATEGY1_ERROR", "WARN", { error: s1Err.message });
     }
 
-    // ESTRATÉGIA 2: Navegar para a lista de NFS-e e encontrar a nota emitida
-    log("NAVIGATE_LIST", "OK", { note: "Tentando navegar para lista de NFS-e", numeroNfse });
+    // Fechar modal de sucesso (pode ainda estar aberto) antes de navegar para a lista
+    await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('button'));
+      for (const btn of btns) {
+        const t = (btn as HTMLButtonElement).textContent?.trim() || '';
+        if (t === 'Fechar' || t === 'OK' || t === 'Ok') { (btn as HTMLButtonElement).click(); return; }
+      }
+    }).catch(() => {});
+    await page.waitForTimeout(1000).catch(() => {});
+
+    // ESTRATÉGIA 2: Lista de NFS-e — marcar checkbox da nota e interceptar download oficial
+    log("STRATEGY2_START", "OK", { note: "Navegando para lista de NFS-e para baixar PDF oficial", numeroNfse });
     try {
-      // Clicar em "Lista Nota Fiscais" no menu NFS-e
       const listaBtn = await page.$(VILAVELHA_SELECTORS.nfseMenu.listaNotaFiscais).catch(() => null);
-      if (listaBtn) {
+      if (!listaBtn) {
+        log("LIST_BTN_NOT_FOUND", "WARN", { note: "Botao Lista Nota Fiscais nao encontrado" });
+      } else {
         await listaBtn.click();
         await page.waitForTimeout(2000);
         await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
         log("LIST_LOADED", "OK", { url: page.url() });
 
-        // Procurar pela nota na lista
-        const notaRow = await page.$(`td:has-text("${numeroNfse}")`).catch(() => null);
-        if (notaRow) {
+        const notaCell = await page.$(`td:has-text("${numeroNfse}")`).catch(() => null);
+        if (!notaCell) {
+          log("NOTA_NOT_IN_LIST", "WARN", { numeroNfse, url: page.url() });
+        } else {
           log("NOTA_FOUND_IN_LIST", "OK", { numeroNfse });
-          // Procurar link de impressão/PDF na mesma linha
-          const row = await notaRow.evaluateHandle((el: Element) => el.closest('tr')).catch(() => null);
+
+          const row = await notaCell.evaluateHandle((el: Element) => el.closest('tr')).catch(() => null);
           if (row) {
+            // Marcar checkbox da linha para selecionar a nota no grid
+            const checkbox = await row.$('input[type="checkbox"]').catch(() => null);
+            if (checkbox) {
+              await checkbox.click();
+              log("CHECKBOX_CLICKED", "OK", { note: "Checkbox da nota marcado no grid" });
+            } else {
+              // Fallback: clicar na célula do número para selecionar a linha
+              await notaCell.click().catch(() => {});
+              log("ROW_CELL_CLICKED", "WARN", { note: "Checkbox nao encontrado, clicou na celula do numero" });
+            }
+            await page.waitForTimeout(800).catch(() => {});
+
+            // Clicar button#_imagebutton7 (botão PDF/Imprimir na barra de ações do grid)
+            const btn7List = await page.waitForSelector(
+              "button#_imagebutton7, button[hint*='PDF'], button[hint*='Imprimir'], button[title*='PDF'], button[title*='Imprimir']",
+              { timeout: 6000, state: "visible" }
+            ).catch(() => null);
+
+            if (btn7List) {
+              log("BTN7_LIST_FOUND", "OK", { note: "Botao PDF encontrado na lista apos selecionar checkbox" });
+              const [download] = await Promise.all([
+                page.waitForEvent("download", { timeout: 30000 }).catch(() => null),
+                btn7List.click(),
+              ]);
+              if (download) {
+                const stream = await download.createReadStream();
+                const chunks: Buffer[] = [];
+                await new Promise<void>((resolve, reject) => {
+                  stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+                  stream.on("end", resolve);
+                  stream.on("error", reject);
+                });
+                const buffer = Buffer.concat(chunks);
+                log("DOWNLOAD", "OK", { bytes: buffer.length, method: "list_checkbox_btn7" });
+                return buffer;
+              }
+              log("BTN7_LIST_NO_DOWNLOAD", "WARN", { note: "Clicou botao PDF na lista mas sem evento de download" });
+            } else {
+              log("BTN7_LIST_NOT_FOUND", "WARN", { note: "Botao PDF nao encontrado na lista apos checkbox" });
+            }
+
+            // Fallback: link <a> de impressão na linha
             const pdfLink = await row.$('a:has-text("Imprimir"), a:has-text("PDF"), a[href*="pdf"], a[href*="imprimir"]').catch(() => null);
             if (pdfLink) {
               const href = await pdfLink.getAttribute("href").catch(() => null);
@@ -2451,7 +2654,6 @@ async function downloadNfsePdf(
                   return buffer;
                 }
               }
-              // Tentar via click e interceptar download
               const [download] = await Promise.all([
                 page.waitForEvent("download", { timeout: 30000 }).catch(() => null),
                 pdfLink.click(),
@@ -2465,22 +2667,18 @@ async function downloadNfsePdf(
                   stream.on("error", reject);
                 });
                 const buffer = Buffer.concat(chunks);
-                log("DOWNLOAD", "OK", { bytes: buffer.length, method: "list_download" });
+                log("DOWNLOAD", "OK", { bytes: buffer.length, method: "list_link_download" });
                 return buffer;
               }
             }
           }
-        } else {
-          log("NOTA_NOT_IN_LIST", "WARN", { numeroNfse, url: page.url() });
         }
-      } else {
-        log("LIST_BTN_NOT_FOUND", "WARN", { note: "Botao Lista Nota Fiscais nao encontrado" });
       }
     } catch (listErr: any) {
       log("LIST_ERROR", "WARN", { error: listErr.message });
     }
 
-    log("NOT_FOUND", "WARN", { note: "Link de PDF nao encontrado - nota emitida mas PDF nao baixado", numeroNfse });
+    log("NOT_FOUND", "WARN", { note: "PDF oficial nao obtido - nota emitida mas download falhou", numeroNfse });
     return null;
 
   } catch (err: any) {

@@ -17,8 +17,8 @@ const cache: CacheStore = {};
 const CACHE_DURATION_MS = 30 * 60 * 1000; // 30 minutos
 const UPDATE_INTERVAL_MS = 30 * 60 * 1000; // 30 minutos
 
-// Identificadores das empresas a cachear
-const COMPANY_IDENTIFIERS = ["21918918000194"]; // Fraga Contabilidade
+// Identificadores das empresas a cachear (R7 Geradores removida - não é mais cliente)
+const COMPANY_IDENTIFIERS: string[] = [];
 
 /**
  * Gera chave de cache para uma empresa

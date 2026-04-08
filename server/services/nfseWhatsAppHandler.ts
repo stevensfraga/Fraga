@@ -17,6 +17,28 @@
 
 import mysql from "mysql2/promise";
 import { invokeLLM } from "../_core/llm";
+import axios from "axios";
+
+const ZAP_API_URL = process.env.ZAP_CONTABIL_API_URL || process.env.ZAP_CONTABIL_BASE_URL || "https://api-fraga.zapcontabil.chat";
+const ZAP_API_KEY = process.env.ZAP_CONTABIL_API_KEY || process.env.WHATSAPP_API_KEY || "";
+
+async function sendNfseWhatsApp(phone: string, message: string): Promise<void> {
+  if (!ZAP_API_KEY) {
+    console.warn("[NfseWhatsApp] ZAP_API_KEY não configurada — mensagem de follow-up não enviada");
+    return;
+  }
+  try {
+    const phoneDigits = phone.replace(/\D/g, "");
+    await axios.post(
+      `${ZAP_API_URL}/api/send/${phoneDigits}`,
+      { body: message, connectionFrom: 0 },
+      { headers: { Authorization: `Bearer ${ZAP_API_KEY}`, "Content-Type": "application/json" }, timeout: 15000 }
+    );
+    console.log(`[NfseWhatsApp] Follow-up PDF enviado para ${phoneDigits}`);
+  } catch (err: any) {
+    console.error(`[NfseWhatsApp] Erro ao enviar follow-up WhatsApp: ${err.message}`);
+  }
+}
 
 async function getConn() {
   return mysql.createConnection(process.env.DATABASE_URL!);
@@ -283,11 +305,25 @@ export async function handleNfseWhatsAppRequest(
 
       await clearSession(fromPhone);
 
-      // Disparar motor de emissão em background
+      // Disparar motor de emissão em background e enviar PDF via WhatsApp ao concluir
+      const phoneForFollowup = fromPhone;
       setImmediate(async () => {
         try {
           const { emitNfse } = await import("./nfseEmissionEngine");
-          await emitNfse(emissaoId);
+          const result = await emitNfse(emissaoId);
+          if (result?.success) {
+            const baseUrl = process.env.APP_BASE_URL || "https://dashboard.fragacontabilidade.com.br";
+            const pdfLink = result.pdfDownloadToken
+              ? `${baseUrl}/api/nfse/pdf/${result.pdfDownloadToken}`
+              : result.pdfUrl;
+            if (pdfLink) {
+              const msg =
+                `✅ *NFS-e nº ${result.numeroNfse} emitida com sucesso!*\n\n` +
+                `📄 *Baixe o PDF da sua nota:*\n${pdfLink}\n\n` +
+                `_Link válido por 24 horas._`;
+              await sendNfseWhatsApp(phoneForFollowup, msg);
+            }
+          }
         } catch (err: any) {
           console.error(`[NfseWhatsApp] Erro ao disparar motor para emissão ${emissaoId}:`, err.message);
         }

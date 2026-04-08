@@ -90,7 +90,6 @@ export const clients = mysqlTable("clients", {
   name: varchar("name", { length: 255 }).notNull(),
   document: varchar("document", { length: 20 }), // CNPJ/CPF sem máscara
   email: varchar("email", { length: 320 }),
-  passwordHash: varchar("password_hash", { length: 255 }),
   phone: varchar("phone", { length: 20 }), // Telefone comercial
   phoneCellular: varchar("phoneCellular", { length: 20 }), // Telefone celular (prioridade para WhatsApp)
   whatsappNumber: varchar("whatsappNumber", { length: 20 }),

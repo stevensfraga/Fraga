@@ -332,21 +332,14 @@ export async function syncClientsToDatabase(
         let whatsappNumber: string | null = null;
         let phoneWarning: string | null = null;
 
-        // Tentar usar celular (mobilePhone)
-        if (customer.mobilePhone) {
-          whatsappNumber = normalizePhoneToE164(customer.mobilePhone);
+        // API v2 retorna campo "telefone" (não mobilePhone/phone)
+        if (customer.telefone) {
+          whatsappNumber = normalizePhoneToE164(customer.telefone);
           if (!whatsappNumber) {
-            phoneWarning = `Cliente ${customer.name}: telefone celular inválido (${customer.mobilePhone})`;
-          }
-        }
-        // Se não houver celular, tentar telefone
-        else if (customer.phone) {
-          whatsappNumber = normalizePhoneToE164(customer.phone);
-          if (!whatsappNumber) {
-            phoneWarning = `Cliente ${customer.name}: telefone inválido (${customer.phone})`;
+            phoneWarning = `Cliente ${customer.nome}: telefone inválido (${customer.telefone})`;
           }
         } else {
-          phoneWarning = `Cliente ${customer.name}: nenhum telefone celular encontrado`;
+          phoneWarning = `Cliente ${customer.nome}: nenhum telefone encontrado`;
         }
 
         if (phoneWarning) {
@@ -366,35 +359,35 @@ export async function syncClientsToDatabase(
           await db
             .update(clients)
             .set({
-              name: customer.name,
+              name: customer.nome,
               email: customer.email,
-              phone: customer.phone,
+              phone: customer.telefone,
               whatsappNumber: whatsappNumber,
               updatedAt: new Date(),
             })
             .where(eq(clients.contaAzulId, customer.id));
 
-          console.log(`[DB] ✅ Cliente atualizado: ${customer.name} (WhatsApp: ${whatsappNumber || 'null'})`);
+          console.log(`[DB] ✅ Cliente atualizado: ${customer.nome} (WhatsApp: ${whatsappNumber || 'null'})`);
         } else {
           // Inserir novo cliente
           await db.insert(clients).values({
             contaAzulId: customer.id,
-            name: customer.name,
+            name: customer.nome,
             email: customer.email,
-            phone: customer.phone,
+            phone: customer.telefone,
             whatsappNumber: whatsappNumber,
             createdAt: new Date(),
             updatedAt: new Date(),
           });
 
-          console.log(`[DB] ✅ Cliente inserido: ${customer.name} (WhatsApp: ${whatsappNumber || 'null'})`);
+          console.log(`[DB] ✅ Cliente inserido: ${customer.nome} (WhatsApp: ${whatsappNumber || 'null'})`);
         }
 
         synced++;
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         console.error(`[DB] ❌ Erro ao sincronizar cliente ${customer.id}:`, errorMsg);
-        errors.push(`Cliente ${customer.name}: ${errorMsg}`);
+        errors.push(`Cliente ${customer.nome}: ${errorMsg}`);
       }
     }
 
@@ -425,11 +418,18 @@ export async function syncReceivablesToDatabase(
 
     for (const receivable of receivablesFromAPI) {
       try {
+        // API v2 retorna cliente como objeto aninhado: { cliente: { id, nome } }
+        const clienteId = receivable.cliente?.id;
+        if (!clienteId) {
+          console.warn(`[DB] ⚠️ Boleto ${receivable.id} sem cliente vinculado — pulando`);
+          continue;
+        }
+
         // Buscar cliente pelo contaAzulId
         const customerRecord = await db
           .select()
           .from(clients)
-          .where(eq(clients.contaAzulId, receivable.customer_id))
+          .where(eq(clients.contaAzulId, clienteId))
           .limit(1);
 
         if (!customerRecord || customerRecord.length === 0) {
@@ -455,20 +455,28 @@ export async function syncReceivablesToDatabase(
         const amount = parseFloat(receivable.amount) || 0;
         const collectionScore = (daysOverdue * 2) + (amount / 100);
 
+        // Extrair link de pagamento (API pode retornar em campos diferentes)
+        const paymentLinkCanonical: string | null =
+          receivable.share_url || receivable.url || receivable.payment_url || null;
+
         if (existing && existing.length > 0) {
           // Atualizar boleto existente
+          const updateData: any = {
+            amount: receivable.amount,
+            dueDate: dueDate,
+            status: status,
+            collectionScore: collectionScore.toFixed(2),
+            updatedAt: new Date(),
+          };
+          if (paymentLinkCanonical) {
+            updateData.paymentLinkCanonical = paymentLinkCanonical;
+          }
           await db
             .update(receivables)
-            .set({
-              amount: receivable.amount,
-              dueDate: dueDate,
-              status: status,
-              collectionScore: collectionScore.toFixed(2),
-              updatedAt: new Date(),
-            })
+            .set(updateData)
             .where(eq(receivables.contaAzulId, receivable.id));
 
-          console.log(`[DB] ✅ Boleto atualizado: ${receivable.id}`);
+          console.log(`[DB] ✅ Boleto atualizado: ${receivable.id} (link: ${paymentLinkCanonical || 'null'})`);
         } else {
           // Inserir novo boleto
           await db.insert(receivables).values({
@@ -478,9 +486,10 @@ export async function syncReceivablesToDatabase(
             dueDate: dueDate,
             status: status,
             collectionScore: collectionScore.toFixed(2),
+            paymentLinkCanonical: paymentLinkCanonical,
           });
 
-          console.log(`[DB] ✅ Boleto inserido: ${receivable.id}`);
+          console.log(`[DB] ✅ Boleto inserido: ${receivable.id} (link: ${paymentLinkCanonical || 'null'})`);
         }
 
         synced++;
