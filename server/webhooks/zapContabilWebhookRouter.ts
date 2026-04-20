@@ -14,6 +14,8 @@ import {
   auditAIInteraction,
 } from '../collection/aiDebtAssistant';
 import { isOptOutMessage, markOptOut } from '../services/reguaCobrancaService';
+import { processMessageWithClaude, auditClaudeInteraction } from '../services/claudeSecretariaService';
+import { processMessageWithClaude, auditClaudeInteraction } from '../services/claudeSecretariaService';
 
 const router = Router();
 
@@ -21,6 +23,9 @@ const router = Router();
 
 /** ID da fila Financeiro no ZapContábil */
 const FINANCEIRO_QUEUE_ID = Number(process.env.ZAP_DEFAULT_QUEUE_ID_FINANCEIRO) || 5;
+
+/** ID do setor Cobrança — tickets criados pela régua automática */
+const COBRANCA_QUEUE_ID = Number(process.env.COBRANCA_QUEUE_ID) || 13;
 
 /** Janela de deduplicação em ms (2 minutos) */
 const DEDUP_WINDOW_MS = 2 * 60 * 1000;
@@ -266,12 +271,14 @@ async function moveTicketToFinanceiro(ticketId: number): Promise<boolean> {
   }
 
   try {
-    const url = `${ZAP_API_URL}/api/ticket/${ticketId}`;
-    console.log(`[ZapWebhook] 🔄 Movendo ticket #${ticketId} para fila Financeiro (queueId=${FINANCEIRO_QUEUE_ID})...`);
+    const url = `${ZAP_API_URL}/api/tickets/${ticketId}`;
+    const MAIKEL_USER_ID = Number(process.env.COBRANCA_TRANSFER_USER_ID) || 11;
+    console.log(`[ZapWebhook] 🔄 Movendo ticket #${ticketId} para Financeiro e atribuindo ao userId=${MAIKEL_USER_ID}...`);
 
+    // 1. Transferir para Financeiro com atribuição ao Maikel
     const response = await axios.put(
       url,
-      { queueId: FINANCEIRO_QUEUE_ID },
+      { queueId: FINANCEIRO_QUEUE_ID, userId: MAIKEL_USER_ID, status: 'open' },
       {
         headers: {
           Authorization: `Bearer ${ZAP_API_KEY}`,
@@ -281,7 +288,21 @@ async function moveTicketToFinanceiro(ticketId: number): Promise<boolean> {
       }
     );
 
-    console.log(`[ZapWebhook] ✅ Ticket #${ticketId} movido para Financeiro: HTTP ${response.status}`);
+    // 2. Aguardar 1.5s e reconfirmar atribuição ao Maikel (evita sobrescrita automática do ZapContabil)
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    await axios.put(
+      url,
+      { userId: MAIKEL_USER_ID, status: 'open' },
+      {
+        headers: {
+          Authorization: `Bearer ${ZAP_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 10000,
+      }
+    );
+
+    console.log(`[ZapWebhook] ✅ Ticket #${ticketId} → Financeiro | Maikel (userId=${MAIKEL_USER_ID}) atribuído: HTTP ${response.status}`);
     return true;
   } catch (error: any) {
     console.error(`[ZapWebhook] ❌ Erro ao mover ticket #${ticketId}:`, error.response?.status, error.response?.data || error.message);
@@ -460,6 +481,86 @@ async function handleInboundWithAI(phoneE164: string, text: string): Promise<voi
   }
 }
 
+// ─── HANDLER CLAUDE SECRETARY INBOUND ────────────────────────────────────────
+
+async function handleInboundWithClaudeSecretary(
+  phoneE164: string,
+  text: string,
+  contactName: string,
+  ticketId: number | null
+): Promise<void> {
+  const correlationId = `cs-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  try {
+    console.log(`[ClaudeSecretary] 📩 Processando: phone=${phoneE164} | ticket=${ticketId} | "${text.substring(0, 60)}"`);
+
+    const result = await processMessageWithClaude(phoneE164, text, contactName);
+
+    // Enviar resposta ao cliente
+    const sendResult = await sendWhatsAppReply(phoneE164, result.reply);
+    console.log(`[ClaudeSecretary] 📤 Resposta enviada: success=${sendResult.success}`);
+
+    // Transferir para setor se Claude decidiu
+    if (result.shouldTransfer && result.targetQueueId && ticketId) {
+      const ZAP_API_URL = process.env.ZAP_CONTABIL_API_URL || 'https://api-fraga.zapcontabil.chat';
+      const ZAP_API_KEY = process.env.ZAP_CONTABIL_API_KEY || process.env.WHATSAPP_API_KEY || '';
+
+      if (ZAP_API_KEY) {
+        try {
+          const url = `${ZAP_API_URL}/api/tickets/${ticketId}`;
+          await axios.put(url,
+            { queueId: result.targetQueueId, userId: null, status: 'open' },
+            { headers: { Authorization: `Bearer ${ZAP_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 10000 }
+          );
+          console.log(`[ClaudeSecretary] 🔀 Ticket #${ticketId} → setor ${result.targetQueueId} (${result.targetQueueName})`);
+        } catch (transferErr: any) {
+          console.error(`[ClaudeSecretary] ❌ Erro ao transferir ticket:`, transferErr.message);
+        }
+      }
+    }
+
+    // Auditar (fire-and-forget — não bloqueia a resposta)
+    auditClaudeInteraction({
+      fromPhone: phoneE164,
+      clientId: null,
+      userText: text,
+      reply: result.reply,
+      shouldTransfer: result.shouldTransfer,
+      targetQueueId: result.targetQueueId,
+      targetQueueName: result.targetQueueName,
+      reasoning: result.reasoning,
+      correlationId,
+    });
+
+    // Marcar inbound_messages como processed
+    try {
+      const conn = await mysql.createConnection(process.env.DATABASE_URL!);
+      await conn.execute(
+        `UPDATE inbound_messages SET processed = 1 WHERE fromPhone = ? ORDER BY createdAt DESC LIMIT 1`,
+        [phoneE164]
+      );
+      await conn.end();
+    } catch (e) {
+      console.error(`[ClaudeSecretary] ⚠️ Erro ao marcar processed:`, e);
+    }
+
+    console.log(`[ClaudeSecretary] ✅ COMPLETO: phone=${phoneE164} | transfer=${result.shouldTransfer} | queue=${result.targetQueueId || 'nenhuma'}`);
+  } catch (error: any) {
+    console.error(`[ClaudeSecretary] ❌ Erro:`, error.message);
+    await auditClaudeInteraction({
+      fromPhone: phoneE164,
+      clientId: null,
+      userText: text,
+      reply: '',
+      shouldTransfer: false,
+      targetQueueId: null,
+      targetQueueName: null,
+      reasoning: `ERRO: ${error.message}`,
+      correlationId,
+    }).catch(() => {});
+  }
+}
+
 // ─── PROCESSAMENTO ASSÍNCRONO (FLUXO DEFINITIVO) ────────────────────────────
 //
 // Ordem dos gates:
@@ -584,8 +685,24 @@ async function processInboundAsync(extracted: ExtractedMessage, body: any): Prom
       console.error(`[ZapWebhook] ⚠️ Erro ao parar followup:`, e.message)
     );
 
+    // ── 7.5. Resposta em ticket Cobrança → transferir para Financeiro ──
+    // Se o cliente respondeu um ticket do setor Cobrança, transferir automaticamente
+    // para Financeiro INDEPENDENTE de whitelist ou IA.
+    if (ticketId && queueId === COBRANCA_QUEUE_ID) {
+      console.log(`[ZapWebhook] 💬 Resposta recebida no ticket Cobrança #${ticketId} — transferindo para Financeiro`);
+      const moved = await moveTicketToFinanceiro(ticketId);
+      if (moved) {
+        console.log(`[ZapWebhook] ✅ Ticket #${ticketId} transferido: Cobrança → Financeiro`);
+        decision = 'MOVED_TO_FINANCEIRO';
+      } else {
+        console.warn(`[ZapWebhook] ⚠️ Falha ao transferir ticket #${ticketId} para Financeiro`);
+      }
+      // Retornar após transferência — atendimento segue pelo Financeiro
+      return;
+    }
+
     // ── 8. Verificar feature flag ──
-    if (!FEATURE_FLAGS.INBOUND_AI_ENABLED) {
+    if (!FEATURE_FLAGS.INBOUND_AI_ENABLED && !FEATURE_FLAGS.CLAUDE_SECRETARY_ENABLED) {
       decision = 'SKIPPED_FLAG_OFF';
       console.log(`[ZapWebhook] 📋 DECISION:`, {
         fromPhone_norm: phoneNorm,
@@ -696,10 +813,10 @@ async function processInboundAsync(extracted: ExtractedMessage, body: any): Prom
       return;
     }
 
-    // ── 11. Verificar/mover fila Financeiro ──
-    // Se o ticket não está na fila Financeiro, mover automaticamente.
-    // Após mover, continuar processamento normal.
-    if (ticketId && queueId !== null && queueId !== FINANCEIRO_QUEUE_ID) {
+    // ── 11. Verificar/mover fila Financeiro (apenas fluxo legado de cobrança) ──
+    // NOTA: quando Claude Secretary está ativo, ele faz o roteamento correto para cada setor.
+    // NÃO mover para Financeiro previamente — isso corrompia a transferência da Juliana.
+    if (!FEATURE_FLAGS.CLAUDE_SECRETARY_ENABLED && ticketId && queueId !== null && queueId !== FINANCEIRO_QUEUE_ID) {
       console.log(`[ZapWebhook] 🔄 Ticket #${ticketId} está na fila ${queueId}, movendo para Financeiro (${FINANCEIRO_QUEUE_ID})...`);
       const moved = await moveTicketToFinanceiro(ticketId);
       if (moved) {
@@ -731,7 +848,14 @@ async function processInboundAsync(extracted: ExtractedMessage, body: any): Prom
       textPreview: text.substring(0, 50),
     });
 
-    await handleInboundWithAI(phoneNorm, text);
+    // Claude Secretary (sistema novo) tem prioridade sobre IA legada
+    if (FEATURE_FLAGS.CLAUDE_SECRETARY_ENABLED) {
+      console.log(`[ZapWebhook] 🤖 Roteando para Claude Secretary`);
+      await handleInboundWithClaudeSecretary(phoneNorm, text, contactName, ticketId);
+    } else {
+      console.log(`[ZapWebhook] 🤖 Roteando para IA legada (intents financeiros)`);
+      await handleInboundWithAI(phoneNorm, text);
+    }
 
   } catch (error: any) {
     console.error(`[ZapWebhook] ❌ Erro processamento:`, error);

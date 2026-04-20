@@ -2191,6 +2191,9 @@ export default function ExecutiveDashboard() {
       {/* Quick Nav */}
       <div className="border-b bg-card/50 px-4 sm:px-6 py-2">
         <div className="max-w-7xl mx-auto flex gap-2 overflow-x-auto">
+          <Button variant="default" size="sm" className="text-xs whitespace-nowrap bg-purple-600 hover:bg-purple-700 text-white shrink-0" onClick={() => navigate('/secretaria-virtual')}>
+            <Bot className="h-3 w-3 mr-1" /> Secretária Virtual
+          </Button>
           <Button variant="ghost" size="sm" className="text-xs whitespace-nowrap" onClick={() => navigate('/clientes')}>
             <Users className="h-3 w-3 mr-1" /> Clientes
           </Button>
@@ -2223,6 +2226,9 @@ export default function ExecutiveDashboard() {
           </Button>
           <Button variant="ghost" size="sm" className="text-xs whitespace-nowrap" onClick={() => navigate('/certificados')}>
             <ShieldCheck className="h-3 w-3 mr-1" /> Certificados
+          </Button>
+          <Button variant="ghost" size="sm" className="text-xs whitespace-nowrap font-semibold text-violet-600 hover:text-violet-700 hover:bg-violet-50" onClick={() => navigate('/acessorias')}>
+            <FileText className="h-3 w-3 mr-1" /> Acessórias
           </Button>
           <Button variant="ghost" size="sm" className="text-xs whitespace-nowrap" onClick={() => navigate('/integracoes-fiscais')}>
             <Network className="h-3 w-3 mr-1" /> Integrações

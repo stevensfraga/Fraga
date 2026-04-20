@@ -57,7 +57,12 @@ services:
       # Aplicação
       VITE_APP_TITLE: ${VITE_APP_TITLE}
       VITE_APP_LOGO: ${VITE_APP_LOGO}
-      VITE_APP_ID: ${VITE_APP_ID}
+      # Secretária Virtual (Juliana)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      CLAUDE_SECRETARY_ENABLED: ${CLAUDE_SECRETARY_ENABLED}
+      WHATSAPP_AI_WHITELIST: ${WHATSAPP_AI_WHITELIST}
+      ZAP_CONTABIL_API_KEY: ${ZAP_CONTABIL_API_KEY}
+      ZAP_CONTABIL_BASE_URL: ${ZAP_CONTABIL_BASE_URL}
     volumes:
       - /data/certificados:/data/certificados
       - /var/log/fraga:/var/log/fraga
