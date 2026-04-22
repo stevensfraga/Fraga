@@ -15,7 +15,6 @@ import {
 } from '../collection/aiDebtAssistant';
 import { isOptOutMessage, markOptOut } from '../services/reguaCobrancaService';
 import { processMessageWithClaude, auditClaudeInteraction } from '../services/claudeSecretariaService';
-import { processMessageWithClaude, auditClaudeInteraction } from '../services/claudeSecretariaService';
 
 const router = Router();
 
@@ -55,6 +54,7 @@ type InboundDecision =
   | 'SKIPPED_OPT_OUT'
   | 'OPT_OUT_CONFIRMED'
   | 'MOVED_TO_FINANCEIRO'
+  | 'SKIPPED_GROUP'
   | 'ERROR';
 
 // ─── EXTRAÇÃO DE CAMPOS ──────────────────────────────────────────────────────
@@ -139,6 +139,9 @@ function extractMessage(body: ZapContabilPayload): ExtractedMessage {
     const fromMe = key.fromMe === true;
     const ticket = data.ticket || {};
 
+    // Ignorar mensagens de grupo (remoteJid termina com @g.us)
+    const isGroup = key.remoteJid ? key.remoteJid.endsWith('@g.us') : false;
+
     let from = 'unknown';
     if (key.remoteJid) {
       from = key.remoteJid.replace(/@.*$/, '');
@@ -171,7 +174,7 @@ function extractMessage(body: ZapContabilPayload): ExtractedMessage {
       userId,
       ticketStatus,
       contactName,
-      isInbound: !fromMe && from !== 'unknown' && text.length > 0,
+      isInbound: !fromMe && !isGroup && from !== 'unknown' && text.length > 0,
     };
   }
 
@@ -587,6 +590,13 @@ async function processInboundAsync(extracted: ExtractedMessage, body: any): Prom
 
     // ── 1. Verificar se é inbound válido ──
     if (!isInbound) {
+      // Detectar se foi descartado por ser mensagem de grupo
+      const rawJid = body?.data?.key?.remoteJid || '';
+      const isGroupMsg = rawJid.endsWith('@g.us');
+      if (isGroupMsg) {
+        console.log(`[ZapWebhook] 👥 SKIPPED_GROUP: mensagem de grupo ignorada (remoteJid=${rawJid})`);
+        return;
+      }
       decision = fromMe ? 'SKIPPED_FROM_ME' : 'SKIPPED_NOT_INBOUND';
       console.log(`[ZapWebhook] 📋 DECISION:`, {
         fromPhone_raw: from,
