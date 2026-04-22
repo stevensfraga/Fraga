@@ -103,6 +103,89 @@ export const QUEUE_AGENTS: Record<number, string> = {
   13: '', // Cobrança é automática (IA)
 };
 
+
+// ─── MEMÓRIA DE CLIENTES ──────────────────────────────────────────────────────
+
+interface ClientMemory {
+  phone: string;
+  person_name: string | null;
+  company_name: string | null;
+  usual_sector_id: number | null;
+  usual_sector_name: string | null;
+  interaction_count: number;
+  last_topic: string | null;
+}
+
+async function loadClientMemory(phone: string): Promise<ClientMemory | null> {
+  try {
+    const conn = await mysql.createConnection(process.env.DATABASE_URL!);
+    const [rows] = await conn.execute(
+      `SELECT phone, person_name, company_name, usual_sector_id, usual_sector_name, interaction_count, last_topic
+       FROM juliana_client_memory WHERE phone = ? LIMIT 1`,
+      [phone]
+    );
+    await conn.end();
+    return (rows as any[])[0] || null;
+  } catch (e) {
+    console.warn('[ClaudeSecretary] ⚠️ Erro ao carregar memória:', e);
+    return null;
+  }
+}
+
+async function saveClientMemory(params: {
+  phone: string;
+  personName: string | null;
+  companyName: string | null;
+  transferredToSectorId: number | null;
+  transferredToSectorName: string | null;
+  topic: string | null;
+}): Promise<void> {
+  try {
+    const { phone, personName, companyName, transferredToSectorId, transferredToSectorName, topic } = params;
+    const conn = await mysql.createConnection(process.env.DATABASE_URL!);
+
+    // Verificar setor usual: se houve transferência, comparar com setor atual
+    // e incrementar contagem para o setor mais frequente
+    if (transferredToSectorId) {
+      await conn.execute(
+        `INSERT INTO juliana_client_memory
+           (phone, person_name, company_name, usual_sector_id, usual_sector_name, sector_count, last_topic, interaction_count)
+         VALUES (?, ?, ?, ?, ?, 1, ?, 1)
+         ON DUPLICATE KEY UPDATE
+           person_name    = COALESCE(?, person_name),
+           company_name   = COALESCE(?, company_name),
+           last_topic     = COALESCE(?, last_topic),
+           interaction_count = interaction_count + 1,
+           sector_count   = IF(usual_sector_id = ?, sector_count + 1, IF(? > sector_count, 1, sector_count)),
+           usual_sector_id   = IF(? > sector_count OR usual_sector_id IS NULL, ?, usual_sector_id),
+           usual_sector_name = IF(? > sector_count OR usual_sector_id IS NULL, ?, usual_sector_name)`,
+        [phone, personName, companyName, transferredToSectorId, transferredToSectorName, topic,
+         personName, companyName, topic,
+         transferredToSectorId,
+         1, // new sector_count if different sector
+         1, transferredToSectorId,
+         1, transferredToSectorName]
+      );
+    } else {
+      await conn.execute(
+        `INSERT INTO juliana_client_memory
+           (phone, person_name, company_name, last_topic, interaction_count)
+         VALUES (?, ?, ?, ?, 1)
+         ON DUPLICATE KEY UPDATE
+           person_name    = COALESCE(?, person_name),
+           company_name   = COALESCE(?, company_name),
+           last_topic     = COALESCE(?, last_topic),
+           interaction_count = interaction_count + 1`,
+        [phone, personName, companyName, topic,
+         personName, companyName, topic]
+      );
+    }
+    await conn.end();
+  } catch (e) {
+    console.warn('[ClaudeSecretary] ⚠️ Erro ao salvar memória:', e);
+  }
+}
+
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 
 export interface ClaudeSecretariaResult {
@@ -175,6 +258,12 @@ Exemplos de como você fala:
 6. Ao transferir: mencione só o nome do atendente, NUNCA o nome do setor. Ex: "Vou chamar o Felipe Rafael 😊" — nunca diga "Departamento Pessoal"
 7. Para Cobrança: "Vou te encaminhar pro nosso time de cobrança 😊" (sem nome)
 8. Nunca mencione IDs, números de setor ou sistemas internos
+
+## USO DA MEMÓRIA DO CLIENTE
+- Se o contexto tiver "Nome da pessoa: X", use o PRIMEIRO NOME para cumprimentar — ex: "Oi, Thayana! 😊" em vez de só "Oi!"
+- Se tiver "Já conversou Nx antes", NÃO se apresente como "Aqui é a Juliana da Fraga" — o cliente já te conhece. Vá direto ao ponto.
+- Se tiver "Setor habitual: X", quando o assunto for vago, já pode sugerir — ex: "Você costuma falar com o Fiscal, é sobre isso de novo?"
+- Se for primeiro contato (sem histórico), apresente-se normalmente.
 
 ## ATENDENTES (use esses nomes ao transferir)
 - Fiscal → Alexandre, João ou Walace
@@ -305,42 +394,70 @@ export async function processMessageWithClaude(
     conversation.clientName = contactName;
   }
 
-  // ── Buscar contexto financeiro (paralelo com timeout de 1.5s) ──
+  // ── Carregar memória do cliente ──
+  const clientMemory = await loadClientMemory(phone);
+
+  // ── Buscar contexto financeiro + empresa (paralelo com timeout de 2s) ──
   let contextNote = '';
   try {
-    const _contextTimeout = new Promise<string>(resolve => setTimeout(() => resolve(''), 1500));
+    const _contextTimeout = new Promise<string>(resolve => setTimeout(() => resolve(''), 2000));
     const _contextFetch = (async (): Promise<string> => {
       const clientInfo = await resolveClientByPhone(phone);
-      if (!clientInfo) return '';
-      conversation.clientId = clientInfo.clientId;
-      if (!conversation.clientName) conversation.clientName = clientInfo.clientName;
 
-      // Buscar dados da empresa (razão social e regime tributário)
-      let empresaInfo = '';
-      try {
-        const conn = await mysql.createConnection(process.env.DATABASE_URL!);
-        const [rows] = await conn.execute(
-          `SELECT razao_social, regime_tributario FROM ekontrol_companies WHERE client_id = ? LIMIT 1`,
-          [clientInfo.clientId]
-        );
-        await conn.end();
-        const emp = (rows as any[])[0];
-        if (emp) {
-          empresaInfo = `\nEmpresa: ${emp.razao_social}${emp.regime_tributario ? ` (${emp.regime_tributario})` : ''}`;
-        }
-      } catch (_e) { /* ignorar erro de empresa */ }
+      // Nome da pessoa: prioridade = memória > contactName > clientInfo
+      const personName = clientMemory?.person_name
+        || (contactName && contactName !== 'unknown' ? contactName : null)
+        || clientInfo?.clientName
+        || null;
 
-      // Buscar boletos em aberto e montar mensagem pronta
+      // Nome da empresa
+      let companyName = clientMemory?.company_name || clientInfo?.clientName || null;
+      let regimeTributario = '';
+
+      if (clientInfo) {
+        conversation.clientId = clientInfo.clientId;
+        if (!conversation.clientName) conversation.clientName = personName || clientInfo.clientName;
+
+        // Dados da empresa (ekontrol)
+        try {
+          const conn = await mysql.createConnection(process.env.DATABASE_URL!);
+          const [rows] = await conn.execute(
+            `SELECT razao_social, regime_tributario FROM ekontrol_companies WHERE client_id = ? LIMIT 1`,
+            [clientInfo.clientId]
+          );
+          await conn.end();
+          const emp = (rows as any[])[0];
+          if (emp) {
+            companyName = emp.razao_social;
+            regimeTributario = emp.regime_tributario || '';
+          }
+        } catch (_e) { /* ignorar */ }
+      }
+
+      // Montar bloco de memória/contexto
+      const memoryLines: string[] = [];
+      if (personName && personName !== 'unknown') memoryLines.push(`Nome da pessoa: ${personName.split(' ')[0]} (${personName})`);
+      if (companyName) memoryLines.push(`Empresa: ${companyName}${regimeTributario ? ` — ${regimeTributario}` : ''}`);
+      if (clientMemory?.usual_sector_name) memoryLines.push(`Setor habitual: ${clientMemory.usual_sector_name} (costuma precisar disso)`);
+      if (clientMemory?.last_topic) memoryLines.push(`Último assunto: ${clientMemory.last_topic}`);
+      if (clientMemory && clientMemory.interaction_count > 0) memoryLines.push(`Já conversou ${clientMemory.interaction_count}x antes`);
+
+      const memoryBlock = memoryLines.length > 0
+        ? `\n\n[CONTEXTO DO CLIENTE — use para personalizar, não mencione ao cliente]\n${memoryLines.join('\n')}`
+        : '';
+
+      // Boletos em aberto
+      if (!clientInfo) return memoryBlock || '';
       const honorariosMsg = await buildHonorariosMessage(clientInfo.clientId);
 
       if (honorariosMsg) {
-        return `\n\n[CONTEXTO — use internamente, não repita tudo ao cliente]\nCliente: ${clientInfo.clientName}${empresaInfo}\nStatus: tem honorários em aberto\n\n[MENSAGEM DE HONORÁRIOS — envie EXATAMENTE este texto se o cliente perguntar sobre mensalidade/honorários/boleto do escritório]\n${honorariosMsg}`;
+        return `${memoryBlock}\n\n[HONORÁRIOS EM ABERTO — envie EXATAMENTE este texto se perguntar sobre mensalidade/boleto do escritório]\n${honorariosMsg}`;
       }
-      return `\n\n[CONTEXTO]\nCliente: ${clientInfo.clientName}${empresaInfo} — sem honorários em aberto`;
+      return `${memoryBlock}\n\n[STATUS FINANCEIRO]\nSem mensalidades em aberto.`;
     })();
     contextNote = await Promise.race([_contextFetch, _contextTimeout]);
   } catch (e) {
-    console.warn('[ClaudeSecretary] ⚠️ Erro contexto financeiro:', e);
+    console.warn('[ClaudeSecretary] ⚠️ Erro contexto:', e);
   }
 
   // ── Adicionar mensagem ao histórico ──
@@ -406,6 +523,23 @@ export async function processMessageWithClaude(
   conversation.messages.push({ role: 'assistant', content: result.reply });
 
   console.log(`[ClaudeSecretary] ✅ Resposta: transfer=${result.shouldTransfer} queue=${result.targetQueueId} (${result.targetQueueName || '—'}) | "${result.reply.substring(0, 80)}"`);
+
+  // ── Salvar memória do cliente (fire-and-forget) ──
+  const personName = (contactName && contactName !== 'unknown') ? contactName : null;
+  const companyName = conversation.clientId
+    ? (clientMemory?.company_name || null)
+    : null;
+  const topic = result.shouldTransfer
+    ? `transferido para ${result.targetQueueName}`
+    : text.substring(0, 100);
+  saveClientMemory({
+    phone,
+    personName,
+    companyName,
+    transferredToSectorId: result.shouldTransfer ? result.targetQueueId : null,
+    transferredToSectorName: result.shouldTransfer ? result.targetQueueName : null,
+    topic,
+  }).catch(() => {});
 
   return result;
 }
