@@ -11,6 +11,60 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import mysql from 'mysql2/promise';
+
+// ─── FORMATAÇÃO DE HONORÁRIOS EM ABERTO ─────────────────────────────────────
+
+/**
+ * Busca os boletos de honorários em aberto do cliente e monta a mensagem
+ * formatada com link individual por mês — pronta para ser enviada ao cliente.
+ */
+async function buildHonorariosMessage(clientId: number): Promise<string | null> {
+  try {
+    const conn = await mysql.createConnection(process.env.DATABASE_URL!);
+    const [rows] = await conn.execute(
+      `SELECT amount, dueDate, paymentLinkCanonical, description
+       FROM receivables
+       WHERE clientId = ? AND status IN ('pending', 'overdue')
+       ORDER BY dueDate ASC
+       LIMIT 12`,
+      [clientId]
+    );
+    await conn.end();
+
+    const titles = rows as any[];
+    if (!titles.length) return null;
+
+    const MONTHS_PT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+    const lines: string[] = ['Suas mensalidades em aberto:',''];
+    let total = 0;
+
+    for (const t of titles) {
+      const d = new Date(t.dueDate);
+      const mesAno = `${MONTHS_PT[d.getMonth()]}/${d.getFullYear()}`;
+      const valor = formatBRL(Number(t.amount));
+      total += Number(t.amount);
+      lines.push(`📅 *${mesAno}* — ${valor}`);
+      if (t.paymentLinkCanonical) {
+        lines.push(`🔗 ${t.paymentLinkCanonical}`);
+      } else {
+        lines.push(`⚠️ Link não disponível`);
+      }
+      lines.push('');
+    }
+
+    lines.push(`💰 *Total em aberto: ${formatBRL(total)}*`);
+    lines.push('');
+    lines.push('Cada boleto pode ser pago pelo link acima (Pix ou Boleto). Qualquer dúvida é só chamar! 😊');
+
+    return lines.join('\n');
+  } catch (e) {
+    console.warn('[ClaudeSecretary] ⚠️ Erro ao buscar honorários:', e);
+    return null;
+  }
+}
+
+
 import { resolveClientByPhone, getOpenDebtSummary, formatBRL } from '../collection/aiDebtAssistant';
 
 // ─── MAPA DE SETORES (nomes EXATOS do ZapContábil) ───────────────────────────
@@ -173,10 +227,19 @@ Transferir quando o cliente (já cliente da Fraga) falar sobre:
 
 ### Financeiro (queueId=5)
 Transferir quando o cliente falar sobre:
-- Pagar boleto do escritório, mensalidade da Fraga
-- Valor em aberto, débito com o escritório
-- Segunda via de boleto
+- Negociar, parcelar, pedir desconto na mensalidade
+- Segunda via de boleto que não está no sistema
 - Cobrança, inadimplência
+
+### REGRA ESPECIAL — "quanto devo?" / "tenho boleto?" / "valor em aberto"
+Quando o cliente perguntar de forma VAGA sobre dívida, valor em aberto, boleto ou pagamento, SEMPRE perguntar antes:
+"Você está falando de impostos/guias ou da mensalidade do escritório?"
+
+- Se responder MENSALIDADE / HONORÁRIOS / BOLETO DO ESCRITÓRIO:
+  → Se o contexto tiver [MENSAGEM DE HONORÁRIOS], envie EXATAMENTE aquele texto, sem alterar nada.
+  → Se não tiver (cliente em dia), diga: "Boa notícia! Não tenho nenhuma mensalidade em aberto pra você aqui 😊"
+- Se responder IMPOSTOS / DAS / GUIAS / SIMPLES:
+  → Transferir para Setor Fiscal (queueId=3)
 
 ### Certificado Digital Fraga (queueId=7)
 Transferir quando o cliente falar sobre:
@@ -251,11 +314,29 @@ export async function processMessageWithClaude(
       if (!clientInfo) return '';
       conversation.clientId = clientInfo.clientId;
       if (!conversation.clientName) conversation.clientName = clientInfo.clientName;
-      const debt = await getOpenDebtSummary(clientInfo.clientId);
-      if (debt && debt.totalDebt > 0) {
-        return `\n\n[CONTEXTO — não mencione ao cliente]\nCliente: ${clientInfo.clientName}\nSituação: ${formatBRL(debt.totalDebt)} em aberto — se perguntar pagamento/boleto, transferir para Financeiro`;
+
+      // Buscar dados da empresa (razão social e regime tributário)
+      let empresaInfo = '';
+      try {
+        const conn = await mysql.createConnection(process.env.DATABASE_URL!);
+        const [rows] = await conn.execute(
+          `SELECT razao_social, regime_tributario FROM ekontrol_companies WHERE client_id = ? LIMIT 1`,
+          [clientInfo.clientId]
+        );
+        await conn.end();
+        const emp = (rows as any[])[0];
+        if (emp) {
+          empresaInfo = `\nEmpresa: ${emp.razao_social}${emp.regime_tributario ? ` (${emp.regime_tributario})` : ''}`;
+        }
+      } catch (_e) { /* ignorar erro de empresa */ }
+
+      // Buscar boletos em aberto e montar mensagem pronta
+      const honorariosMsg = await buildHonorariosMessage(clientInfo.clientId);
+
+      if (honorariosMsg) {
+        return `\n\n[CONTEXTO — use internamente, não repita tudo ao cliente]\nCliente: ${clientInfo.clientName}${empresaInfo}\nStatus: tem honorários em aberto\n\n[MENSAGEM DE HONORÁRIOS — envie EXATAMENTE este texto se o cliente perguntar sobre mensalidade/honorários/boleto do escritório]\n${honorariosMsg}`;
       }
-      return `\n\n[CONTEXTO]\nCliente: ${clientInfo.clientName} — em dia`;
+      return `\n\n[CONTEXTO]\nCliente: ${clientInfo.clientName}${empresaInfo} — sem honorários em aberto`;
     })();
     contextNote = await Promise.race([_contextFetch, _contextTimeout]);
   } catch (e) {
